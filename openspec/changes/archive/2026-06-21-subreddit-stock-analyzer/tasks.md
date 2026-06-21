@@ -40,3 +40,27 @@
 - [x] 6.2 Rewrite `reddit_scraper.py` to fetch `/r/wallstreetbets/top.json` using `httpx`.
 - [x] 6.3 Implement a polite delay loop to fetch the comments `.json` for the top 20 posts without hitting rate limits.
 - [x] 6.4 Update the `run_pipeline.py` script to test the new HTTP-based scraping logic.
+
+## 7. Scraper Fallback & Ticker Validation
+
+- [x] 7.1 Implement `old.reddit.com` HTML fallback scraper when JSON requests get 403-blocked.
+- [x] 7.2 Implement `is_valid_ticker` helper in `market_researcher.py` using `yfinance` to check price and market cap.
+- [x] 7.3 Update `run_pipeline.py` to sequentially validate candidate tickers and limit to exactly 5 valid stock securities.
+
+## 8. SEC Filings & Web Search Integration
+
+- [x] 8.1 Fetch recent SEC filings list (last 5 entries) for each ticker using `yfinance`.
+- [x] 8.2 Integrate DuckDuckGo web search via `ddgs` to gather latest industry news and product launches.
+- [x] 8.3 Inject SEC filings and search news into the Gemini prompt to guide the reconciliation analysis.
+
+## 9. Events & Happenings Section
+
+- [x] 9.1 Add `events_happenings` text field to `StockReport` Pydantic schema and system prompt.
+- [x] 9.2 Add `events_happenings` column to `TickerReport` SQLAlchemy model and save it in CRUD logic.
+- [x] 9.3 Update database CLI queries and plain text endpoints to retrieve and format events.
+
+## 10. Rich Frontend Dashboard Redesign
+
+- [x] 10.1 Enrich `/api/tickers/today` endpoint to return latest report previews (price, recommendation, sector).
+- [x] 10.2 Update homepage cards to show recommendation badges, live price, target price, and sector details.
+- [x] 10.3 Redesign report detail view with potential upside calculation, a 4-pillar analysis grid, key ratios tables, and clickable news links.
