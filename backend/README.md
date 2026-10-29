@@ -7,7 +7,7 @@ This is the backend service for the Subreddit Stock Analyzer, an automated daily
 - **Framework:** FastAPI (Python)
 - **Dependency Management:** `uv`
 - **Database:** SQLite (SQLAlchemy + aiosqlite) for local persistence
-- **Scraping:** API-less JSON Endpoint Scraping (via `httpx`) falling back to an HTML scraper on `old.reddit.com` to bypass 403 Forbidden blocks.
+- **Scraping:** Public Reddit Atom/RSS feeds (via `httpx`), with rate-limit-aware throttling. (JSON endpoints and `old.reddit.com` are now blocked for logged-out clients.)
 - **Financial Data & Validation:** `yfinance` to validate candidate stock symbols (via price and market capitalization checks), fetch SEC filings, and collect market metrics.
 - **Web Search Integration:** `ddgs` (DuckDuckGo search) to fetch the latest industry and corporate news (launches, tech advancements, product releases).
 - **AI/LLM:** Pydantic AI with Gemini 2.5 Pro (`gemini-2.5-pro`) to ensure structured outputs and enforce a strict "Default to HOLD" evaluation policy.
@@ -25,8 +25,7 @@ The application functions as a monolith containing both the `reddit-scraper` and
 graph TD
     A[APScheduler / Trigger] -->|Triggers| B[run_pipeline.py]
     B -->|Step 1: Scrape Subreddit| C[reddit_scraper.py]
-    C -->|HTTP GET /top.json| D[Reddit JSON Endpoints]
-    C -->|Fallback to HTML Scraping| E[old.reddit.com]
+    C -->|HTTP GET /top/.rss + /comments/.rss| D[Reddit RSS Feeds]
     C -->|Extracts posts & comments| F[ticker_extractor.py]
     F -->|Scores raw candidates| B
     B -->|Step 2: Validate Tickers| G[market_researcher.py / yfinance]
@@ -51,7 +50,7 @@ backend/
 │   ├── main.py               # FastAPI application definition and endpoints
 │   ├── market_researcher.py  # Wrapper around yfinance for metrics, filings, and news
 │   ├── models.py             # SQLAlchemy models
-│   ├── reddit_scraper.py     # Custom HTTP scraper with old.reddit.com fallback
+│   ├── reddit_scraper.py     # Rate-limited Reddit RSS feed scraper
 │   ├── scheduler.py          # Daily APScheduler integration
 │   └── ticker_extractor.py   # Regex ticker extractor and engagement scorer
 ├── tests/                    # LLM behavior and validation test suites
@@ -61,9 +60,10 @@ backend/
 
 ### Key Design Choices & Trade-offs
 
-1. **Direct JSON Scraping & HTML Fallback**:
-   - *Choice*: Fetch raw listings by appending `.json` to public Reddit URLs, falling back to a custom HTML scraper parsing `old.reddit.com` when blocked by 403 errors.
-   - *Trade-off*: Bypasses OAuth setups and API credentials, but requires a strict rate-limit posture (polite sleeps of 1.5 seconds) to avoid blocks.
+1. **RSS Feed Scraping**:
+   - *Choice*: Fetch `/r/<sub>/top/.rss?t=day` and each post's `/comments/<id>/.rss`. As of Oct 2026 Reddit returns `403 Blocked` for unauthenticated `.json` endpoints and redirects `old.reddit.com` to a login page (`302 reason=lor2`); RSS still works.
+   - *Trade-off*: No API credentials needed, but RSS exposes **no upvote scores or comment counts**, so every post/comment has `score=1` and ranking is effectively by mention count. RSS is also heavily rate limited (~1 request/60s logged out); the scraper reads `x-ratelimit-remaining`/`x-ratelimit-reset` and sleeps accordingly, so a 20-post run takes **~20 minutes**.
+   - *Upgrade path*: The official Reddit OAuth API (free "script" app) would restore scores and far higher rate limits.
 2. **yfinance Stock Validation Filtering**:
    - *Choice*: Tickers found by regex must have both a valid `currentPrice` (or `regularMarketPrice`) and a non-empty `marketCap` on `yfinance`.
    - *Trade-off*: Guarantees that the pipeline only analyzes and persists reports for actual tradeable stocks (filtering out index ETFs, crypto, options jargon, and noise), but adds validation latency during initial extraction.
@@ -102,6 +102,7 @@ uv run uvicorn app.main:app --reload
 The API will be available at `http://localhost:8000`.
 - Swagger UI: `http://localhost:8000/docs`
 - PlainText Report endpoint: `http://localhost:8000/api/reports/{ticker}/text`
+- Dashboard tickers: `http://localhost:8000/api/tickers/today` returns the **most recent pipeline run** (not the UTC calendar day, since UTC midnight is 08:00 SGT and the run is at 19:00 SGT).
 
 ### Running the Pipeline Manually
 

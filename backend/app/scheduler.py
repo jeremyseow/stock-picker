@@ -15,12 +15,12 @@ async def daily_pipeline_job():
 
 def setup_scheduler():
     scheduler = AsyncIOScheduler()
-    # Run every day at 8:00 PM (20:00) SGT (Singapore Time)
-    logger.info("Setting up daily background scheduler at 20:00 SGT (Asia/Singapore)")
+    # Run every day at 7:00 PM (19:00) SGT (Singapore Time)
+    logger.info("Setting up daily background scheduler at 19:00 SGT (Asia/Singapore)")
     scheduler.add_job(
         daily_pipeline_job,
         'cron',
-        hour=20,
+        hour=19,
         minute=0,
         timezone=ZoneInfo('Asia/Singapore')
     )

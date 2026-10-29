@@ -11,7 +11,7 @@ The frontend dashboard and all sub-routes SHALL feature a persistent, styled nav
 - **THEN** the router navigates the user to the corresponding page.
 
 ### Requirement: Display Rich Daily Top Stocks List
-The frontend dashboard homepage SHALL display the top highly discussed stocks for the current day as rich preview cards.
+The frontend dashboard homepage SHALL display the top highly discussed stocks from the most recent pipeline run as rich preview cards. The backend `/api/tickers/today` endpoint SHALL return the tickers of the latest run (all `DailyTicker` rows within 1 hour of the newest timestamp) rather than filtering by calendar day, so the dashboard is never empty between runs.
 
 #### Scenario: View Daily Stocks
 - **WHEN** a user navigates to the dashboard homepage
@@ -21,6 +21,14 @@ The frontend dashboard homepage SHALL display the top highly discussed stocks fo
   - Sector and Industry.
   - Live stock price and target price (if report exists).
   - Reddit mention count and engagement score.
+
+#### Scenario: View Run Date
+- **WHEN** the dashboard displays tickers
+- **THEN** a badge below the page subtitle shows "Picks from run on {date, time}", converting the backend's naive UTC timestamp to the user's local timezone.
+
+#### Scenario: Stale Run Warning
+- **WHEN** the latest run is 1 or more days old
+- **THEN** the run-date badge is styled amber and shows "(N days ago)"; otherwise it is styled green.
 
 ### Requirement: Display Individual Stock Report
 The frontend dashboard SHALL allow the user to click on a stock ticker to view its detailed generated research report.

@@ -4,18 +4,24 @@
 TBD - created by archiving change subreddit-stock-analyzer. Update Purpose after archive.
 ## Requirements
 ### Requirement: Scrape Bounded Target Subreddit
-The system SHALL fetch strictly the top 20 posts and the top 50 comments per post from a specified subreddit over the last 24 hours.
+The system SHALL fetch strictly the top 20 posts and the top 50 comments per post from a specified subreddit over the last 24 hours, using Reddit's public Atom/RSS feeds.
+
+> Note (Oct 2026): Reddit returns `403 Blocked` for unauthenticated `.json` endpoints and redirects `old.reddit.com` to a login page (`302 reason=lor2`). The previous JSON-first / `old.reddit.com` HTML fallback approach was removed for this reason.
 
 #### Scenario: Scheduled Execution
-- **WHEN** the daily scheduled time is reached
-- **THEN** the scraper hits the `.json` endpoint using an HTTP client (`httpx` or `requests`) with a custom User-Agent, pulling the bounded dataset (max 20 posts, 1000 comments) and implementing strict `asyncio.sleep` delays between comment requests to avoid rate limits.
+- **WHEN** the daily scheduled time is reached (19:00 Asia/Singapore)
+- **THEN** the scraper issues an HTTP GET (`httpx`, custom User-Agent) to `https://www.reddit.com/r/{subreddit}/top/.rss?t=day&limit=20`, parses the Atom entries (id, title, body, permalink), and then fetches each post's `{permalink}/.rss?sort=top&limit=50` for comments, skipping the first entry (the post itself).
 
-### Requirement: Scraping Fallback Mechanism
-The system SHALL automatically fall back to an HTML scraper parsing listings and comments from `old.reddit.com` if the `.json` requests get blocked with a 403 Forbidden or 429 Too Many Requests response.
+### Requirement: Respect Reddit Rate Limits
+The system SHALL throttle feed requests using Reddit's `x-ratelimit-remaining` and `x-ratelimit-reset` response headers (logged-out quota is roughly 1 request per 60 seconds).
 
-#### Scenario: Fallback Scraping
-- **WHEN** a `.json` request receives a client error (e.g. 403 Blocked)
-- **THEN** the system logs a warning and issues an HTTP GET to `https://old.reddit.com/r/{subreddit}/` with custom user-agent, parsing listings and thread comments using regular expressions or an HTML parser, maintaining the 1.5s sleep interval.
+#### Scenario: Quota Exhausted
+- **WHEN** a response reports `x-ratelimit-remaining` below 1
+- **THEN** the system sleeps for `x-ratelimit-reset + 1` seconds before the next request.
+
+#### Scenario: Rate Limited
+- **WHEN** a request returns `429 Too Many Requests`
+- **THEN** the system sleeps for `x-ratelimit-reset + 1` seconds and retries, up to 4 attempts, after which it logs an error and skips that feed (a failed top-posts feed aborts the run with no posts).
 
 ### Requirement: Extract and Rank Stock Tickers
 The system SHALL parse the text to identify stock tickers and rank them using a weighted engagement heuristic (e.g., Mentions * Upvotes).
@@ -23,6 +29,10 @@ The system SHALL parse the text to identify stock tickers and rank them using a 
 #### Scenario: Top Tickers Selection
 - **WHEN** extraction is complete
 - **THEN** the system isolates the top scoring tickers for the day.
+
+#### Scenario: Scores Unavailable
+- **WHEN** posts and comments are sourced from RSS feeds (which expose no upvote scores or comment counts)
+- **THEN** each post and comment is assigned a score of 1, so ranking is effectively by mention count.
 
 ### Requirement: Bundle Ticker Context
 The system SHALL aggregate the specific posts and comments that mentioned each of the top tickers to provide exact context to the LLM.

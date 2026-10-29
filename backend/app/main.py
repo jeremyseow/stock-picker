@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 
 from app.database import init_db, get_db
 from app.models import DailyTicker, TickerReport
@@ -50,10 +50,15 @@ async def health_check():
 
 @app.get("/api/tickers/today")
 async def get_todays_tickers(db: AsyncSession = Depends(get_db)):
-    """Get the top tickers extracted today, along with key details from the latest report."""
-    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-    
-    query = select(DailyTicker).where(DailyTicker.date >= today_start).order_by(DailyTicker.rank)
+    """Get the top tickers from the most recent pipeline run, along with key details from the latest report."""
+    # Use the latest run rather than "today in UTC": UTC midnight is 08:00 SGT, which left the
+    # dashboard empty until the 20:00 SGT run. All tickers in a run are committed together.
+    latest = (await db.execute(select(func.max(DailyTicker.date)))).scalar()
+    if latest is None:
+        return []
+    run_start = latest - timedelta(hours=1)
+
+    query = select(DailyTicker).where(DailyTicker.date >= run_start).order_by(DailyTicker.rank)
     result = await db.execute(query)
     tickers = result.scalars().all()
     
