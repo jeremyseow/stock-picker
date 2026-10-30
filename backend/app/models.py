@@ -37,3 +37,15 @@ class TickerReport(Base):
     recommendation_rationale = Column(String)
     raw_metrics = Column(JSON)
     raw_news = Column(JSON)
+
+class TickerTrajectoryAnalysis(Base):
+    __tablename__ = "ticker_trajectory_analyses"
+
+    id = Column(Integer, primary_key=True, index=True)
+    ticker = Column(String, index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    latest_report_id = Column(Integer, index=True)
+    report_count = Column(Integer)
+    divergence_analysis = Column(String)
+    catalyst_follow_through = Column(String)
+    trajectory_outlook = Column(String)

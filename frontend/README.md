@@ -9,10 +9,11 @@ This is the frontend dashboard for the Subreddit Stock Analyzer. It provides a c
 - **Styling:** Tailwind CSS
 - **Data Fetching:** Standard `fetch` API connecting to the local FastAPI backend.
 
-The frontend is kept intentionally simple and lightweight for the MVP:
-- `/`: The main dashboard displaying the top stocks of the day, their rank, and engagement scores.
+The frontend is kept intentionally simple and lightweight:
+- `/`: The main dashboard displaying the top stocks from the most recent run, their rank, price metrics, and AI recommendation badges.
 - `/report/[ticker]`: A detailed view displaying the AI-generated industry overview, news summary, Reddit sentiment, and final Buy/Sell/Hold recommendation.
-- `/stats`: A historical overview of ticker mentions over time.
+- `/stats`: Historical Intelligence Reports browser featuring a run date selector to inspect past reports.
+- `/analytics`: Ticker Analytical Report featuring interactive SVG Price vs. Target Price charts, AI Trajectory Meta-Analysis, sentiment progression, valuation snapshots, and actionable insights logs across multiple runs.
 
 ## Local Setup
 

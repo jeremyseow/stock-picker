@@ -2,6 +2,7 @@
 
 import { useEffect, useState, use } from "react";
 import Link from "next/link";
+import Navbar from "@/components/Navbar";
 
 interface RawMetrics {
   current_price?: number | null;
@@ -143,27 +144,7 @@ export default function ReportPage({ params }: { params: Promise<{ ticker: strin
       {/* Background gradients */}
       <div className="absolute top-0 left-0 right-0 h-[400px] bg-gradient-to-b from-indigo-500/5 via-purple-500/3 to-transparent pointer-events-none blur-[100px]" />
 
-      {/* Navigation Header */}
-      <header className="sticky top-0 z-50 backdrop-blur-md bg-slate-950/80 border-b border-slate-800/80">
-        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2 group">
-            <span className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-500/20 group-hover:scale-105 transition-transform">
-              📈
-            </span>
-            <span className="font-extrabold text-xl bg-clip-text text-transparent bg-gradient-to-r from-indigo-200 via-slate-100 to-indigo-200">
-              Antigravity <span className="text-indigo-400">StockPicker</span>
-            </span>
-          </Link>
-          <nav className="flex items-center gap-6">
-            <Link href="/" className="text-sm font-semibold text-slate-400 hover:text-slate-200 transition-colors">
-              Dashboard
-            </Link>
-            <Link href="/stats" className="text-sm font-semibold text-slate-400 hover:text-slate-200 transition-colors">
-              Historical Trends
-            </Link>
-          </nav>
-        </div>
-      </header>
+      <Navbar />
 
       <main className="max-w-6xl mx-auto px-6 py-8 relative">
         {/* Back Link */}

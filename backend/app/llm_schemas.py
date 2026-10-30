@@ -15,3 +15,8 @@ class StockReport(BaseModel):
     
     recommendation: Literal["BUY", "SELL", "HOLD"] = Field(description="The final standard recommendation. Default to HOLD.")
     recommendation_rationale: str = Field(description="Brief 1-2 sentence justification for the final recommendation.")
+
+class TrajectoryAnalysis(BaseModel):
+    divergence_analysis: str = Field(description="Analysis of divergence or convergence between retail hype/sentiment and actual stock price movements across the historical reports.")
+    catalyst_follow_through: str = Field(description="Evaluation of whether previously identified catalysts, actionable insights, and corporate watchpoints played out across subsequent reports.")
+    trajectory_outlook: str = Field(description="Longitudinal outlook synthesizing the multi-day trend, consensus stability, and overall risk posture.")

@@ -13,6 +13,11 @@ BLACKLIST = {
     "AI", "PE"
 }
 
+# Ticker aliases mapping secondary share classes or common synonyms to the official primary security
+TICKER_ALIASES = {
+    "GOOGL": "GOOG",
+}
+
 TICKER_REGEX = re.compile(r'\$([A-Z]{1,5})\b|(?<!\$)\b([A-Z]{2,5})\b')
 
 def extract_tickers_from_text(text):
@@ -29,6 +34,8 @@ def extract_tickers_from_text(text):
     for m in matches:
         # findall returns (dollar_group, clean_group)
         ticker = m[0] or m[1]
+        if ticker:
+            ticker = TICKER_ALIASES.get(ticker, ticker)
         if ticker and ticker not in BLACKLIST:
             # Filter out single letters unless they are famous (like F, C)
             if len(ticker) == 1 and ticker not in ["F", "C", "V", "O"]:

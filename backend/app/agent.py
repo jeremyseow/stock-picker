@@ -1,6 +1,6 @@
 import os
 from pydantic_ai import Agent, RunContext
-from app.llm_schemas import StockReport
+from app.llm_schemas import StockReport, TrajectoryAnalysis
 import logging
 
 logger = logging.getLogger(__name__)
@@ -33,6 +33,18 @@ If there is any ambiguity, mixed signals, or lack of data, you MUST output "HOLD
 Do not invent financial data. Only use the data provided in the user prompt.
 """
 
+TRAJECTORY_SYSTEM_PROMPT = """
+You are a senior quantitative and fundamental equity analyst specializing in longitudinal meta-analysis.
+Your task is to analyze chronological historical intelligence reports for a single stock ticker across multiple pipeline runs.
+
+CRITICAL INSTRUCTIONS FOR SECTIONS:
+- divergence_analysis: Analyze whether retail sentiment/hype on Reddit diverged or converged with the stock's actual market price and analyst target price over time. Highlight whether retail hype spiked into resistance, whether sentiment soured near a bottom, or whether price action validated sentiment.
+- catalyst_follow_through: Evaluate whether previous watchpoints, SEC filing disclosures, actionable insights, or catalysts mentioned in earlier reports actually materialized in subsequent reports.
+- trajectory_outlook: Provide a comprehensive longitudinal outlook on whether the company's fundamentals and risk posture are improving, stable, or deteriorating over time. Summarize the stability of the recommendation posture and identify the primary pivot factor for future runs.
+
+Base your analysis STRICTLY on the historical report snapshots provided in the prompt. Do not hallucinate external dates or unverified numbers.
+"""
+
 # Use a mock API key if none is set so it doesn't crash on init during dev
 if not os.getenv("GEMINI_API_KEY"):
     os.environ["GEMINI_API_KEY"] = "mock_key"
@@ -41,6 +53,12 @@ analyzer_agent = Agent(
     'google:gemini-2.5-pro',
     output_type=StockReport,
     system_prompt=SYSTEM_PROMPT
+)
+
+trajectory_agent = Agent(
+    'google:gemini-2.5-pro',
+    output_type=TrajectoryAnalysis,
+    system_prompt=TRAJECTORY_SYSTEM_PROMPT
 )
 
 async def generate_stock_report(ticker: str, market_metrics: dict, recent_news: list, reddit_context: str, sec_filings: str, web_search_news: str) -> StockReport:
@@ -86,4 +104,42 @@ async def generate_stock_report(ticker: str, market_metrics: dict, recent_news: 
             reconciliation_actionable_insight="Verify network connectivity and API keys.",
             recommendation="HOLD",
             recommendation_rationale=f"Failed to analyze due to error: {e}"
+        )
+
+async def generate_trajectory_analysis(ticker: str, historical_reports: list[dict]) -> TrajectoryAnalysis:
+    """
+    Calls the LLM to synthesize multi-run historical reports into a trajectory meta-analysis.
+    """
+    logger.info(f"Generating trajectory analysis for {ticker} across {len(historical_reports)} historical reports")
+    
+    formatted_history = []
+    for idx, rep in enumerate(historical_reports, 1):
+        formatted_history.append(f"""
+--- REPORT RUN #{idx} ({rep.get('date')}) ---
+- Market Price: ${rep.get('current_price')} | Target Price: ${rep.get('target_price')}
+- Recommendation: {rep.get('recommendation')} ({rep.get('recommendation_rationale')})
+- Sentiment: {rep.get('community_sentiment')} | Hype: {rep.get('community_hype')}
+- Risk Score: {rep.get('reconciliation_risk_score')}
+- Ground Truth: {rep.get('ground_truth_status')}
+- Actionable Insight from this run: {rep.get('reconciliation_actionable_insight')}
+""")
+    
+    history_text = "\n".join(formatted_history)
+    prompt = f"""
+    Analyze the following chronological historical intelligence reports for {ticker}:
+
+    {history_text}
+
+    Synthesize the longitudinal trajectory, divergence between retail sentiment and market price, and follow-through on previous actionable insights.
+    """
+
+    try:
+        result = await trajectory_agent.run(prompt)
+        return result.output
+    except Exception as e:
+        logger.error(f"Error generating trajectory analysis for {ticker}: {e}")
+        return TrajectoryAnalysis(
+            divergence_analysis=f"Unable to generate divergence analysis: {e}",
+            catalyst_follow_through=f"Unable to evaluate catalyst follow-through: {e}",
+            trajectory_outlook=f"Unable to generate trajectory outlook: {e}"
         )

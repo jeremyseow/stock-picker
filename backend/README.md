@@ -103,6 +103,11 @@ The API will be available at `http://localhost:8000`.
 - Swagger UI: `http://localhost:8000/docs`
 - PlainText Report endpoint: `http://localhost:8000/api/reports/{ticker}/text`
 - Dashboard tickers: `http://localhost:8000/api/tickers/today` returns the **most recent pipeline run** (not the UTC calendar day, since UTC midnight is 08:00 SGT and the run is at 19:00 SGT).
+- Historical Report Dates: `http://localhost:8000/api/reports/dates` returns all distinct execution dates.
+- Reports by Date: `http://localhost:8000/api/reports?date=YYYY-MM-DD` returns reports generated on that calendar date.
+- Tracked Tickers Catalog: `http://localhost:8000/api/analytics/tickers` lists all tickers with saved reports.
+- Ticker Trajectory History: `http://localhost:8000/api/analytics/ticker/{ticker}` returns chronological run reports and price points.
+- Trajectory Meta-Analysis: `POST /api/analytics/ticker/{ticker}/meta-analysis` synthesizes multi-day retail divergence and catalyst follow-through via Gemini (cached in SQLite).
 
 ### Running the Pipeline Manually
 

@@ -12,3 +12,6 @@ wheels/
 # Virtual environments
 .venv
 .env
+
+# DB
+stock_analyzer.db

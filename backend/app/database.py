@@ -16,6 +16,7 @@ async def get_db():
         yield session
 
 async def init_db():
+    import app.models  # Ensure models are registered on metadata
     async with engine.begin() as conn:
         # Create tables
         await conn.run_sync(Base.metadata.create_all)

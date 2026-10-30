@@ -1,6 +1,7 @@
 import yfinance as yf
 import logging
 from ddgs import DDGS
+from app.ticker_extractor import TICKER_ALIASES
 
 logger = logging.getLogger(__name__)
 
@@ -8,6 +9,7 @@ def fetch_financial_metrics(ticker_symbol: str) -> dict:
     """
     Fetches basic market metrics for a given ticker using yfinance.
     """
+    ticker_symbol = TICKER_ALIASES.get(ticker_symbol.upper(), ticker_symbol.upper())
     logger.info(f"Fetching financial metrics for {ticker_symbol}")
     try:
         stock = yf.Ticker(ticker_symbol)
@@ -105,6 +107,7 @@ def is_valid_ticker(ticker_symbol: str) -> bool:
     Validates a ticker symbol by checking if yfinance has a valid price and market cap.
     This helps filter out noise words like OP, CALLS, SOH, CNBC, PE, JUST.
     """
+    ticker_symbol = TICKER_ALIASES.get(ticker_symbol.upper(), ticker_symbol.upper())
     logger.info(f"Validating ticker symbol: {ticker_symbol}")
     try:
         stock = yf.Ticker(ticker_symbol)

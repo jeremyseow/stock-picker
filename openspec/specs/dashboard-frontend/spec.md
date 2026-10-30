@@ -2,12 +2,14 @@
 
 ## Purpose
 TBD - created by archiving change subreddit-stock-analyzer. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: Shared Navigation Header
-The frontend dashboard and all sub-routes SHALL feature a persistent, styled navigation header bar to switch between the main Dashboard and Historical Trends.
+The frontend dashboard and all sub-routes SHALL feature a persistent, styled navigation header bar to switch between the main Dashboard, Historical Reports, and Ticker Analytics.
 
 #### Scenario: Navigate Pages
-- **WHEN** a user clicks on "Historical Trends" or "Dashboard" link in the header
+- **WHEN** a user clicks on "Historical Reports", "Ticker Analytics", or "Dashboard" link in the header
 - **THEN** the router navigates the user to the corresponding page.
 
 ### Requirement: Display Rich Daily Top Stocks List
@@ -46,10 +48,17 @@ The frontend dashboard SHALL allow the user to click on a stock ticker to view i
   - **Financial Ratios Grid**: Trailing P/E, forward P/E, 52-week high/low.
   - **Corporate News headlines list**: Render raw news articles as clickable external links (if links exist).
 
-### Requirement: Display Historical Statistics
-The frontend dashboard SHALL present useful aggregate statistics, such as historically trending tickers.
+### Requirement: Display Date-Selected Historical Reports
+The frontend dashboard SHALL provide a Historical Reports view that enables users to view all available pipeline run dates and display the intelligence reports generated on a selected date.
 
-#### Scenario: View Aggregate Stats
-- **WHEN** the user navigates to "Historical Trends"
-- **THEN** a table is displayed showing tickers, total mention counts, max engagement scores, and dates scraped.
+#### Scenario: View Available Dates
+- **WHEN** the user navigates to the Historical Reports view
+- **THEN** the interface fetches and presents a list or picker of all historical run dates.
 
+#### Scenario: Select Date and View Reports
+- **WHEN** the user selects a specific date
+- **THEN** the dashboard fetches and renders report preview cards for each ticker analyzed on that date, showing ticker symbol, recommendation badge, price, target price, and industry.
+
+#### Scenario: No Reports for Date
+- **WHEN** the user selects a date that has no recorded reports
+- **THEN** a clear informative message is displayed stating no reports are available for that date.
