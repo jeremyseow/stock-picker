@@ -21,6 +21,7 @@ graph TD
         C -->|Top 5 Validated Stocks| D
         D -->|Enriched Financial Context| AGENT[Pydantic AI Agent<br/>Gemini 2.5 Pro]
         AGENT -->|Structured StockReport| DB[(SQLite Database<br/>stock_analyzer.db)]
+        RUN -->|Step 6: Consolidated Digest| TG[Telegram Alerts<br/>telegram_notifier.py]
     end
 
     subgraph Backend API (FastAPI)
@@ -55,13 +56,16 @@ stock-picker/
 │   │   ├── pipeline.py           # Core ingestion, analysis, and persistence pipeline
 │   │   ├── reddit_scraper.py     # Atom/RSS feed parser with rate-limit handling
 │   │   ├── scheduler.py          # APScheduler cron job (19:00 SGT)
+│   │   ├── telegram_notifier.py  # Telegram Bot API client for consolidated daily digests
 │   │   └── ticker_extractor.py   # Regex extraction and engagement scoring
 │   ├── tests/
 │   │   ├── test_analytics_api.py # Async integration tests for dates & analytics endpoints
 │   │   ├── test_evals.py         # LLM evaluation and ticker validation tests
-│   │   └── test_smart_money.py   # Form 4 extraction, smart money serialization & guardrails
+│   │   ├── test_smart_money.py   # Form 4 extraction, smart money serialization & guardrails
+│   │   └── test_telegram_notifier.py # Telegram digest formatting & dispatch tests
 │   ├── pyproject.toml            # Backend dependencies (managed via uv)
 │   ├── run_pipeline.py           # CLI script to execute the pipeline manually
+│   ├── send_test_telegram.py     # CLI tool to test or manually dispatch today's digest
 │   └── query_report.py           # CLI tool to inspect a report from the database
 ├── frontend/
 │   ├── src/
@@ -102,6 +106,9 @@ stock-picker/
 5. **Zero-Cost Smart Money & Insider Radar**:
    - *Choice*: Leverages native `yfinance` Form 4 transactions (`insider_purchases`, `insider_transactions`) and targeted DuckDuckGo political disclosure queries.
    - *Trade-off*: Eliminates expensive commercial insider data subscriptions (Bloomberg, Quiver Quant), while enforcing hard LLM guardrails (prohibits "BUY" ratings if C-suite executives are liquidating into retail hype).
+6. **Automated Telegram Consolidated Digest**:
+   - *Choice*: Outbound direct REST calls via `httpx` to Telegram Bot API with HTML parse mode.
+   - *Trade-off*: Requires zero new libraries or background webhook daemons, providing instantaneous mobile alerts while gracefully skipping dispatch if unconfigured.
 
 ---
 
@@ -125,6 +132,10 @@ stock-picker/
    ```ini
    REDDIT_USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) HermesAgent/1.1 (Autonomous Research Project)"
    GEMINI_API_KEY=your_gemini_api_key
+
+   # Optional: Telegram Daily Digest Alerts (leave blank to disable)
+   TELEGRAM_BOT_TOKEN=your_bot_token_from_botfather
+   TELEGRAM_CHAT_ID=your_chat_or_channel_id
    ```
 4. Start the FastAPI server (starts scheduler at 19:00 SGT):
    ```bash

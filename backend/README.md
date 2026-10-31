@@ -18,6 +18,8 @@ The application functions as a monolith containing both the `reddit-scraper` and
 2. **Validation:** Checks all candidates against `yfinance` to filter out non-stock uppercase noise (e.g. `OP`, `CNBC`, `CALLS`, `JUST`) and ETF/indices (e.g. `SPY`, `QQQ`), keeping exactly the top 5 valid stock securities.
 3. **Researching:** Fetches key financial metrics, recent SEC filings (last 5 entries), news, latest web search news, Form 4 insider transactions, and Congressional trading disclosures for the 5 selected tickers.
 4. **Evaluating:** Synthesizes the Reddit sentiment, SEC filings, news, and insider/Congressional data into a structured `StockReport` (enforcing that heavy insider selling blocks "BUY" ratings).
+5. **Persisting:** Saves all validated tickers and structured intelligence reports to SQLite (`stock_analyzer.db`).
+6. **Notifying:** Formats and dispatches a consolidated HTML daily market intelligence digest to Telegram via `telegram_notifier.py`.
 
 ### High-Level Data Flow
 
@@ -52,10 +54,12 @@ backend/
 │   ├── models.py             # SQLAlchemy models
 │   ├── reddit_scraper.py     # Rate-limited Reddit RSS feed scraper
 │   ├── scheduler.py          # Daily APScheduler integration
+│   ├── telegram_notifier.py  # Telegram Bot API client for consolidated daily digests
 │   └── ticker_extractor.py   # Regex ticker extractor and engagement scorer
 ├── tests/                    # LLM behavior and validation test suites
 ├── pyproject.toml            # Project configuration and uv dependencies
-└── run_pipeline.py           # Executable entry point to run pipeline manually
+├── run_pipeline.py           # Executable entry point to run pipeline manually
+└── send_test_telegram.py     # CLI tool to test or manually dispatch today's digest
 ```
 
 ### Key Design Choices & Trade-offs
@@ -90,6 +94,10 @@ backend/
    REDDIT_USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) HermesAgent/1.1 (Autonomous Research Project)"
    
    GEMINI_API_KEY=your_gemini_api_key
+
+   # Optional: Telegram Daily Digest Alerts (leave blank to disable)
+   TELEGRAM_BOT_TOKEN="your_bot_token_from_botfather"
+   TELEGRAM_CHAT_ID="your_telegram_chat_or_channel_id"
    ```
 
 ## How to Run

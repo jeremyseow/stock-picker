@@ -15,6 +15,7 @@ from app.market_researcher import (
 )
 from app.agent import generate_stock_report
 from app.crud import save_daily_tickers, save_ticker_report
+from app.telegram_notifier import send_daily_digest
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,8 @@ async def run_analysis_pipeline():
                 
     logger.info(f"Selected {len(top_tickers)} valid tickers for analysis: {[t['ticker'] for t in top_tickers]}")
     
+    processed_summaries = []
+
     async with AsyncSessionLocal() as db:
         await save_daily_tickers(db, top_tickers)
         
@@ -98,5 +101,18 @@ async def run_analysis_pipeline():
             enriched_insider_data["insider_activity_summary"] = report.insider_activity_summary
 
             await save_ticker_report(db, ticker, report, metrics, news, insider_data=enriched_insider_data)
+
+            processed_summaries.append({
+                "rank": item.get("rank", len(processed_summaries) + 1),
+                "ticker": ticker,
+                "recommendation": report.recommendation,
+                "current_price": metrics.get("current_price"),
+                "target_price": metrics.get("target_price"),
+                "smart_money_verdict": report.smart_money_verdict,
+                "actionable_insight": report.reconciliation_actionable_insight
+            })
             
+    logger.info("Step 6: Sending Telegram daily digest...")
+    await send_daily_digest(processed_summaries)
+
     logger.info("Pipeline completed successfully!")
