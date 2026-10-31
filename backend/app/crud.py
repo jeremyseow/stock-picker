@@ -19,7 +19,14 @@ async def save_daily_tickers(db: AsyncSession, tickers_with_context: list):
         db.add(db_ticker)
     await db.commit()
 
-async def save_ticker_report(db: AsyncSession, ticker: str, report: StockReport, metrics: dict, news: list):
+async def save_ticker_report(
+    db: AsyncSession,
+    ticker: str,
+    report: StockReport,
+    metrics: dict,
+    news: list,
+    insider_data: dict | None = None
+):
     """
     Save the generated report and raw data to the database.
     """
@@ -32,6 +39,8 @@ async def save_ticker_report(db: AsyncSession, ticker: str, report: StockReport,
         ground_truth_status=report.ground_truth_status,
         ground_truth_filings_news=report.ground_truth_filings_news,
         events_happenings=report.events_happenings,
+        smart_money_verdict=report.smart_money_verdict,
+        raw_insider_data=insider_data or {},
         reconciliation_risk_score=report.reconciliation_risk_score,
         reconciliation_analysis=report.reconciliation_analysis,
         reconciliation_actionable_insight=report.reconciliation_actionable_insight,

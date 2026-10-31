@@ -11,7 +11,8 @@ graph TD
     subgraph Data Ingestion
         A[Reddit RSS Feeds<br/>r/wallstreetbets top & comments] --> C[Scraper & Ticker Extractor<br/>reddit_scraper.py + ticker_extractor.py]
         B1[yfinance API<br/>Metrics & SEC Filings] --> D[Market Researcher<br/>market_researcher.py]
-        B2[DuckDuckGo Search<br/>Corporate News & Tech Launches] --> D
+        B2[yfinance Form 4<br/>Insider Transactions & 6m Net Flow] --> D
+        B3[DuckDuckGo Search<br/>Corporate News & Congressional Trades] --> D
     end
 
     subgraph Pipeline & LLM Synthesis
@@ -57,19 +58,21 @@ stock-picker/
 │   │   └── ticker_extractor.py   # Regex extraction and engagement scoring
 │   ├── tests/
 │   │   ├── test_analytics_api.py # Async integration tests for dates & analytics endpoints
-│   │   └── test_evals.py         # LLM evaluation and ticker validation tests
+│   │   ├── test_evals.py         # LLM evaluation and ticker validation tests
+│   │   └── test_smart_money.py   # Form 4 extraction, smart money serialization & guardrails
 │   ├── pyproject.toml            # Backend dependencies (managed via uv)
 │   ├── run_pipeline.py           # CLI script to execute the pipeline manually
 │   └── query_report.py           # CLI tool to inspect a report from the database
 ├── frontend/
 │   ├── src/
 │   │   ├── app/
-│   │   │   ├── page.tsx          # Homepage: Daily top stocks from latest run
+│   │   │   ├── page.tsx          # Homepage: Daily top stocks with smart money verdicts
 │   │   │   ├── stats/page.tsx    # Historical Reports explorer with date selector
 │   │   │   ├── analytics/page.tsx# Multi-run Ticker Analytics & trajectory chart
-│   │   │   └── report/[ticker]/  # Detailed Four-Pillar Intelligence Report view
+│   │   │   └── report/[ticker]/  # Four-Pillar Report & Smart Money Radar view
 │   │   └── components/
 │   │       ├── Navbar.tsx        # Persistent top navigation bar
+│   │       ├── SmartMoneyRadar.tsx # Form 4 executive flow & Capitol Hill STOCK Act disclosures
 │   │       ├── PriceTrajectoryChart.tsx # SVG chart of Market Price vs Target Price
 │   │       ├── MetaAnalysisCard.tsx     # On-demand AI Trajectory Meta-Analysis
 │   │       ├── SentimentTrajectoryTimeline.tsx # Recommendation & sentiment history
@@ -96,6 +99,9 @@ stock-picker/
 4. **Zero-Dependency Responsive SVG Charting**:
    - *Choice*: Time-series charts are drawn using pure SVG and Tailwind CSS within React.
    - *Trade-off*: Zero external charting dependencies, no React 19 / Next.js 15 bundle conflicts, and native dark-theme styling.
+5. **Zero-Cost Smart Money & Insider Radar**:
+   - *Choice*: Leverages native `yfinance` Form 4 transactions (`insider_purchases`, `insider_transactions`) and targeted DuckDuckGo political disclosure queries.
+   - *Trade-off*: Eliminates expensive commercial insider data subscriptions (Bloomberg, Quiver Quant), while enforcing hard LLM guardrails (prohibits "BUY" ratings if C-suite executives are liquidating into retail hype).
 
 ---
 

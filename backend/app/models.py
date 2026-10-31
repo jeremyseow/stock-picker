@@ -29,6 +29,9 @@ class TickerReport(Base):
     ground_truth_filings_news = Column(String)
     events_happenings = Column(String)
     
+    smart_money_verdict = Column(String)
+    raw_insider_data = Column(JSON)
+    
     reconciliation_risk_score = Column(String)
     reconciliation_analysis = Column(String)
     reconciliation_actionable_insight = Column(String)

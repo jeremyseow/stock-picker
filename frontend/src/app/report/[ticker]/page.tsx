@@ -3,6 +3,7 @@
 import { useEffect, useState, use } from "react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
+import SmartMoneyRadar, { RawInsiderData } from "@/components/SmartMoneyRadar";
 
 interface RawMetrics {
   current_price?: number | null;
@@ -40,6 +41,8 @@ interface Report {
   reconciliation_actionable_insight: string;
   recommendation: "BUY" | "SELL" | "HOLD";
   recommendation_rationale: string;
+  smart_money_verdict?: string | null;
+  raw_insider_data?: RawInsiderData | null;
   raw_metrics: RawMetrics | null;
   raw_news: RawNewsItem[] | null;
 }
@@ -71,6 +74,13 @@ export default function ReportPage({ params }: { params: Promise<{ ticker: strin
             parsedReport.raw_news = JSON.parse(data.raw_news);
           } catch (e) {
             console.error("Failed to parse raw_news string", e);
+          }
+        }
+        if (typeof data.raw_insider_data === "string") {
+          try {
+            parsedReport.raw_insider_data = JSON.parse(data.raw_insider_data);
+          } catch (e) {
+            console.error("Failed to parse raw_insider_data string", e);
           }
         }
         setReport(parsedReport);
@@ -147,10 +157,18 @@ export default function ReportPage({ params }: { params: Promise<{ ticker: strin
       <Navbar />
 
       <main className="max-w-6xl mx-auto px-6 py-8 relative">
-        {/* Back Link */}
-        <Link href="/" className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-slate-200 font-medium mb-8 group transition-colors">
-          <span className="group-hover:-translate-x-1 transition-transform">&larr;</span> Back to Dashboard
-        </Link>
+        {/* Navigation Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
+          <Link href="/" className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-slate-200 font-medium group transition-colors">
+            <span className="group-hover:-translate-x-1 transition-transform">&larr;</span> Back to Dashboard
+          </Link>
+          <Link
+            href={`/analytics?ticker=${report.ticker}`}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-slate-900/80 hover:bg-slate-800 text-indigo-300 hover:text-white border border-indigo-500/30 hover:border-indigo-500/60 transition-all shadow-lg shadow-indigo-500/5 group"
+          >
+            <span>📊</span> View Ticker Analytical Report <span className="group-hover:translate-x-1 transition-transform">&rarr;</span>
+          </Link>
+        </div>
 
         {/* Hero Section */}
         <div className="flex flex-col lg:flex-row gap-6 mb-8 items-stretch">
@@ -167,15 +185,23 @@ export default function ReportPage({ params }: { params: Promise<{ ticker: strin
                 Intelligence generated on {new Date(report.date).toLocaleDateString()} at {new Date(report.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </p>
             </div>
-            <div className="mt-6 pt-6 border-t border-slate-800/50 flex gap-6 text-sm">
-              <div>
-                <span className="text-slate-500 block text-[10px] font-bold uppercase tracking-wider mb-0.5">Analyst Rec</span>
-                <span className="font-extrabold text-slate-300 capitalize">{report.raw_metrics?.recommendation_key?.replace("_", " ") || "hold"}</span>
+            <div className="mt-6 pt-6 border-t border-slate-800/50 flex flex-wrap items-center justify-between gap-4 text-sm">
+              <div className="flex gap-6">
+                <div>
+                  <span className="text-slate-500 block text-[10px] font-bold uppercase tracking-wider mb-0.5">Analyst Rec</span>
+                  <span className="font-extrabold text-slate-300 capitalize">{report.raw_metrics?.recommendation_key?.replace("_", " ") || "hold"}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[10px] font-bold uppercase tracking-wider mb-0.5">Market Cap</span>
+                  <span className="font-extrabold text-slate-300">{formatMarketCap(report.raw_metrics?.market_cap)}</span>
+                </div>
               </div>
-              <div>
-                <span className="text-slate-500 block text-[10px] font-bold uppercase tracking-wider mb-0.5">Market Cap</span>
-                <span className="font-extrabold text-slate-300">{formatMarketCap(report.raw_metrics?.market_cap)}</span>
-              </div>
+              <Link
+                href={`/analytics?ticker=${report.ticker}`}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 transition-all"
+              >
+                <span>📈</span> Analytical Report &rarr;
+              </Link>
             </div>
           </div>
 
@@ -298,7 +324,7 @@ export default function ReportPage({ params }: { params: Promise<{ ticker: strin
             </div>
           </div>
 
-          {/* 3. AI Reconciliation */}
+          {/* 4. AI Reconciliation */}
           <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-6 flex flex-col justify-between backdrop-blur-sm">
             <div>
               <div className="flex items-center gap-2 mb-4">
@@ -319,6 +345,14 @@ export default function ReportPage({ params }: { params: Promise<{ ticker: strin
               </p>
             </div>
           </div>
+        </div>
+
+        {/* Smart Money & Insider Trading Radar */}
+        <div className="mb-8">
+          <SmartMoneyRadar
+            verdict={report.smart_money_verdict}
+            insiderData={report.raw_insider_data}
+          />
         </div>
 
         {/* Lower Info Grid: Metrics and News Links */}
@@ -379,6 +413,23 @@ export default function ReportPage({ params }: { params: Promise<{ ticker: strin
               <p className="text-xs text-slate-500 py-4 italic text-center">No standard news headlines available for this stock.</p>
             )}
           </div>
+        </div>
+
+        {/* Bottom Navigation / Analytical Report Link */}
+        <div className="mt-12 pt-6 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-4">
+          <Link
+            href="/"
+            className="text-xs font-semibold text-slate-400 hover:text-slate-200 transition-colors"
+          >
+            &larr; Return to Daily Dashboard
+          </Link>
+          <Link
+            href={`/analytics?ticker=${report.ticker}`}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20 transition-all group"
+          >
+            <span>📊</span> View Multi-Run Trajectory & Analytics for ${report.ticker}{" "}
+            <span className="group-hover:translate-x-1 transition-transform">&rarr;</span>
+          </Link>
         </div>
       </main>
     </div>

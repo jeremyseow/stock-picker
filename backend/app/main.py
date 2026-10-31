@@ -87,6 +87,7 @@ async def get_todays_tickers(db: AsyncSession = Depends(get_db)):
             "engagement_score": t.engagement_score,
             "date": t.date,
             "recommendation": report.recommendation if report else None,
+            "smart_money_verdict": report.smart_money_verdict if report else None,
             "current_price": report.current_price if report else None,
             "target_price": report.target_price if report else None,
             "industry": report.raw_metrics.get("industry") if report and report.raw_metrics else "Unknown",
@@ -125,13 +126,15 @@ async def get_reports_by_query(
             "target_price": r.target_price,
             "recommendation": r.recommendation,
             "recommendation_rationale": r.recommendation_rationale,
+            "smart_money_verdict": r.smart_money_verdict,
             "community_sentiment": r.community_sentiment,
             "community_hype": r.community_hype,
             "ground_truth_status": r.ground_truth_status,
             "reconciliation_risk_score": r.reconciliation_risk_score,
             "reconciliation_actionable_insight": r.reconciliation_actionable_insight,
             "industry": r.raw_metrics.get("industry") if r.raw_metrics else "Unknown",
-            "sector": r.raw_metrics.get("sector") if r.raw_metrics else "Unknown"
+            "sector": r.raw_metrics.get("sector") if r.raw_metrics else "Unknown",
+            "raw_insider_data": r.raw_insider_data
         })
     return formatted
 
@@ -216,6 +219,7 @@ async def get_ticker_analytics(ticker: str, db: AsyncSession = Depends(get_db)):
             "reconciliation_actionable_insight": r.reconciliation_actionable_insight,
             "recommendation": r.recommendation,
             "recommendation_rationale": r.recommendation_rationale,
+            "smart_money_verdict": r.smart_money_verdict,
             "raw_metrics": r.raw_metrics
         })
     return results
@@ -303,6 +307,7 @@ async def generate_or_refresh_ticker_meta_analysis(
             "target_price": r.target_price,
             "recommendation": r.recommendation,
             "recommendation_rationale": r.recommendation_rationale,
+            "smart_money_verdict": r.smart_money_verdict,
             "community_sentiment": r.community_sentiment,
             "community_hype": r.community_hype,
             "reconciliation_risk_score": r.reconciliation_risk_score,

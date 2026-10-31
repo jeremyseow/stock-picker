@@ -12,6 +12,7 @@ interface ReportItem {
   target_price: number | null;
   recommendation: "BUY" | "SELL" | "HOLD" | null;
   recommendation_rationale: string;
+  smart_money_verdict?: string | null;
   community_sentiment: string;
   community_hype: string;
   ground_truth_status: string;
@@ -110,6 +111,29 @@ export default function HistoricalReportsPage() {
     }
   };
 
+  const getSmartMoneyBadge = (verdict?: string | null) => {
+    if (!verdict) return null;
+    const text = verdict.toLowerCase();
+    let color = "bg-slate-800 text-slate-300 border-slate-700";
+    let icon = "⚖️";
+    if (text.includes("no form 4") || text.includes("no data")) {
+      color = "bg-slate-800 text-slate-400 border-slate-700";
+      icon = "📋";
+    } else if (text.includes("bearish") || text.includes("selling") || text.includes("divergence")) {
+      color = "bg-rose-500/10 text-rose-400 border-rose-500/20";
+      icon = "🔴";
+    } else if (text.includes("bullish") || text.includes("accumulation") || text.includes("buying")) {
+      color = "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
+      icon = "🟢";
+    }
+    return (
+      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-bold border text-right leading-tight max-w-[65%] shrink-0 ${color}`}>
+        <span className="shrink-0">{icon}</span>
+        <span className="truncate">{verdict}</span>
+      </span>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased selection:bg-indigo-500/30 selection:text-indigo-200">
       {/* Background Glow */}
@@ -203,26 +227,29 @@ export default function HistoricalReportsPage() {
                     className="group bg-slate-900/40 border border-slate-800/80 hover:border-slate-700/80 rounded-2xl p-6 transition-all duration-300 hover:shadow-xl hover:shadow-indigo-500/5 flex flex-col justify-between backdrop-blur-sm"
                   >
                     <div>
-                      {/* Top Bar */}
+                      {/* Top Bar: Risk Level & Recommendation */}
+                      <div className="flex items-center justify-between mb-2">
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${getRiskBadge(
+                            rep.reconciliation_risk_score
+                          )}`}
+                        >
+                          Risk: {rep.reconciliation_risk_score || "Medium"}
+                        </span>
+                        {getRecommendationBadge(rep.recommendation)}
+                      </div>
+
+                      {/* Main Bar: Ticker & Smart Money Verdict */}
                       <div className="flex items-start justify-between gap-4 mb-4">
                         <div>
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-2xl font-black tracking-tight text-white group-hover:text-indigo-400 transition-colors">
-                              ${rep.ticker}
-                            </span>
-                            <span
-                              className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${getRiskBadge(
-                                rep.reconciliation_risk_score
-                              )}`}
-                            >
-                              Risk: {rep.reconciliation_risk_score || "Medium"}
-                            </span>
-                          </div>
-                          <span className="text-xs font-medium text-slate-400">
+                          <span className="text-2xl font-black tracking-tight text-white group-hover:text-indigo-400 transition-colors">
+                            ${rep.ticker}
+                          </span>
+                          <span className="text-xs font-medium text-slate-400 block mt-0.5">
                             {rep.sector} &bull; {rep.industry}
                           </span>
                         </div>
-                        {getRecommendationBadge(rep.recommendation)}
+                        {getSmartMoneyBadge(rep.smart_money_verdict)}
                       </div>
 
                       {/* Pricing Snapshot */}

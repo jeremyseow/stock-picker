@@ -12,6 +12,7 @@ interface Ticker {
   engagement_score: number;
   date: string;
   recommendation: "BUY" | "SELL" | "HOLD" | null;
+  smart_money_verdict?: string | null;
   current_price: number | null;
   target_price: number | null;
   industry: string;
@@ -66,6 +67,29 @@ export default function Home() {
           </span>
         );
     }
+  };
+
+  const getSmartMoneyBadge = (verdict?: string | null) => {
+    if (!verdict) return null;
+    const text = verdict.toLowerCase();
+    let color = "bg-slate-800 text-slate-300 border-slate-700";
+    let icon = "⚖️";
+    if (text.includes("no form 4") || text.includes("no data")) {
+      color = "bg-slate-800 text-slate-400 border-slate-700";
+      icon = "📋";
+    } else if (text.includes("bearish") || text.includes("selling") || text.includes("divergence")) {
+      color = "bg-rose-500/10 text-rose-400 border-rose-500/20";
+      icon = "🔴";
+    } else if (text.includes("bullish") || text.includes("accumulation") || text.includes("buying")) {
+      color = "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
+      icon = "🟢";
+    }
+    return (
+      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-bold border text-right leading-tight max-w-[65%] shrink-0 ${color}`}>
+        <span className="shrink-0">{icon}</span>
+        <span className="truncate">{verdict}</span>
+      </span>
+    );
   };
 
   // Backend stores naive UTC timestamps (no "Z"); mark them as UTC so they convert to local time.
@@ -140,16 +164,19 @@ export default function Home() {
               <div className="h-full bg-slate-900/40 border border-slate-800/80 hover:border-indigo-500/40 rounded-2xl p-6 hover:shadow-2xl hover:shadow-indigo-500/5 transition-all duration-300 backdrop-blur-sm hover:-translate-y-1 flex flex-col justify-between">
                 <div>
                   {/* Card Header */}
-                  <div className="flex justify-between items-start mb-4">
-                    <div>
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-slate-800 text-slate-400 mb-1 border border-slate-700/50">
-                        Rank #{t.rank}
-                      </span>
-                      <h2 className="text-3xl font-black text-white group-hover:text-indigo-400 transition-colors">
-                        ${t.ticker}
-                      </h2>
-                    </div>
+                  <div className="flex justify-between items-center mb-2.5">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-slate-800 text-slate-400 border border-slate-700/50">
+                      Rank #{t.rank}
+                    </span>
                     {getRecommendationBadge(t.recommendation)}
+                  </div>
+
+                  {/* Ticker & Smart Money Verdict Row */}
+                  <div className="flex justify-between items-center gap-4 mb-3">
+                    <h2 className="text-3xl font-black text-white group-hover:text-indigo-400 transition-colors shrink-0">
+                      ${t.ticker}
+                    </h2>
+                    {getSmartMoneyBadge(t.smart_money_verdict)}
                   </div>
 
                   {/* Stock Industry / Sector info */}

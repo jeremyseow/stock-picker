@@ -8,16 +8,16 @@ This is the backend service for the Subreddit Stock Analyzer, an automated daily
 - **Dependency Management:** `uv`
 - **Database:** SQLite (SQLAlchemy + aiosqlite) for local persistence
 - **Scraping:** Public Reddit Atom/RSS feeds (via `httpx`), with rate-limit-aware throttling. (JSON endpoints and `old.reddit.com` are now blocked for logged-out clients.)
-- **Financial Data & Validation:** `yfinance` to validate candidate stock symbols (via price and market capitalization checks), fetch SEC filings, and collect market metrics.
-- **Web Search Integration:** `ddgs` (DuckDuckGo search) to fetch the latest industry and corporate news (launches, tech advancements, product releases).
-- **AI/LLM:** Pydantic AI with Gemini 2.5 Pro (`gemini-2.5-pro`) to ensure structured outputs and enforce a strict "Default to HOLD" evaluation policy.
+- **Financial Data & Validation:** `yfinance` to validate candidate stock symbols (via price and market capitalization checks), fetch SEC filings, collect market metrics, and extract Form 4 insider transactions (`insider_purchases`, `insider_transactions`).
+- **Web Search Integration:** `ddgs` (DuckDuckGo search) to fetch the latest industry/corporate news and Congressional/political STOCK Act trading disclosures.
+- **AI/LLM:** Pydantic AI with Gemini 2.5 Pro (`gemini-2.5-pro`) to ensure structured outputs and enforce a strict "Default to HOLD" evaluation policy, blocking "BUY" recommendations if insiders are liquidating shares into retail hype.
 - **Scheduling:** APScheduler to run the pipeline daily.
 
 The application functions as a monolith containing both the `reddit-scraper` and `market-researcher` services. 
 1. **Scraping & Extraction:** Scrapes top posts/comments, extracts potential stock symbols using regex (`$TICKER` or clean 2-5 letter uppercase words), and scores engagement.
 2. **Validation:** Checks all candidates against `yfinance` to filter out non-stock uppercase noise (e.g. `OP`, `CNBC`, `CALLS`, `JUST`) and ETF/indices (e.g. `SPY`, `QQQ`), keeping exactly the top 5 valid stock securities.
-3. **Researching:** Fetches key financial metrics, recent SEC filings (last 5 entries), news, and latest web search news for the 5 selected tickers.
-4. **Evaluating:** Synthesizes the Reddit sentiment, SEC filings, news, and web search results into a structured `StockReport` (defaulting to "HOLD" on mixed signals).
+3. **Researching:** Fetches key financial metrics, recent SEC filings (last 5 entries), news, latest web search news, Form 4 insider transactions, and Congressional trading disclosures for the 5 selected tickers.
+4. **Evaluating:** Synthesizes the Reddit sentiment, SEC filings, news, and insider/Congressional data into a structured `StockReport` (enforcing that heavy insider selling blocks "BUY" ratings).
 
 ### High-Level Data Flow
 

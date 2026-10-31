@@ -4,7 +4,15 @@ from dotenv import load_dotenv
 from app.database import init_db, AsyncSessionLocal
 from app.reddit_scraper import fetch_top_posts_and_comments
 from app.ticker_extractor import get_ranked_tickers_with_context
-from app.market_researcher import fetch_financial_metrics, fetch_recent_news, fetch_sec_filings, fetch_web_search_news, is_valid_ticker
+from app.market_researcher import (
+    fetch_financial_metrics,
+    fetch_recent_news,
+    fetch_sec_filings,
+    fetch_web_search_news,
+    fetch_insider_data,
+    fetch_congressional_trades,
+    is_valid_ticker,
+)
 from app.agent import generate_stock_report
 from app.crud import save_daily_tickers, save_ticker_report
 
@@ -67,10 +75,28 @@ async def run_analysis_pipeline():
             else:
                 web_search_text = "No recent web search news found."
             
+            # Fetch Form 4 insider transactions & Congressional disclosures
+            insider_data = fetch_insider_data(ticker)
+            congressional_trades = fetch_congressional_trades(ticker)
+
             logger.info(f"Step 4: Generating Report for {ticker}...")
-            report = await generate_stock_report(ticker, metrics, news, item["context_text"], sec_filings_text, web_search_text)
+            report = await generate_stock_report(
+                ticker,
+                metrics,
+                news,
+                item["context_text"],
+                sec_filings_text,
+                web_search_text,
+                insider_data=insider_data,
+                congressional_trades=congressional_trades
+            )
             
             logger.info(f"Step 5: Saving {ticker} report ({report.recommendation})...")
-            await save_ticker_report(db, ticker, report, metrics, news)
+            # Enrich insider payload with congressional disclosures and AI synthesis
+            enriched_insider_data = dict(insider_data) if insider_data else {"has_data": False}
+            enriched_insider_data["congressional_trades"] = congressional_trades or []
+            enriched_insider_data["insider_activity_summary"] = report.insider_activity_summary
+
+            await save_ticker_report(db, ticker, report, metrics, news, insider_data=enriched_insider_data)
             
     logger.info("Pipeline completed successfully!")

@@ -85,6 +85,7 @@ def fetch_web_search_news(ticker_symbol: str, limit: int = 3) -> list:
     """
     Performs a web search to fetch the latest stock and industry news (tech advancements, launches, etc.).
     """
+    ticker_symbol = TICKER_ALIASES.get(ticker_symbol.upper(), ticker_symbol.upper())
     query = f"{ticker_symbol} stock latest news product launch tech advancement"
     logger.info(f"Running web search for {ticker_symbol} with query: '{query}'")
     try:
@@ -100,6 +101,134 @@ def fetch_web_search_news(ticker_symbol: str, limit: int = 3) -> list:
             return formatted
     except Exception as e:
         logger.error(f"Error executing web search for {ticker_symbol}: {e}")
+        return []
+
+def fetch_insider_data(ticker_symbol: str, limit: int = 8) -> dict:
+    """
+    Fetches aggregate 6-month insider purchase/sales and recent Form 4 transactions using yfinance.
+    """
+    ticker_symbol = TICKER_ALIASES.get(ticker_symbol.upper(), ticker_symbol.upper())
+    logger.info(f"Fetching insider data for {ticker_symbol}")
+    default_payload = {
+        "has_data": False,
+        "purchases_shares": 0.0,
+        "purchases_trans": 0,
+        "sales_shares": 0.0,
+        "sales_trans": 0,
+        "net_shares": 0.0,
+        "total_held": 0.0,
+        "sentiment_label": "Neutral / No Data",
+        "recent_transactions": []
+    }
+    try:
+        stock = yf.Ticker(ticker_symbol)
+        
+        # 1. Parse aggregate 6-month purchases/sales
+        purchases_df = stock.insider_purchases
+        purchases_shares = 0.0
+        purchases_trans = 0
+        sales_shares = 0.0
+        sales_trans = 0
+        net_shares = 0.0
+        total_held = 0.0
+
+        if purchases_df is not None and not purchases_df.empty:
+            records = purchases_df.to_dict(orient="records")
+            for row in records:
+                label = str(row.get("Insider Purchases Last 6m", "")).strip()
+                shares_val = float(row.get("Shares") or 0.0) if row.get("Shares") is not None else 0.0
+                trans_val = int(row.get("Trans") or 0) if row.get("Trans") is not None and not str(row.get("Trans")).lower() in ["nan", "none", "<na>"] else 0
+                
+                if label == "Purchases":
+                    purchases_shares = shares_val
+                    purchases_trans = trans_val
+                elif label == "Sales":
+                    sales_shares = shares_val
+                    sales_trans = trans_val
+                elif "Net Shares" in label:
+                    net_shares = shares_val
+                elif "Total Insider Shares" in label:
+                    total_held = shares_val
+
+        # 2. Parse recent Form 4 transactions
+        transactions_df = stock.insider_transactions
+        formatted_tx = []
+        if transactions_df is not None and not transactions_df.empty:
+            tx_records = transactions_df.head(limit).to_dict(orient="records")
+            for t in tx_records:
+                # Handle dates and timestamps safely
+                start_date = t.get("Start Date")
+                date_str = str(start_date).split()[0] if start_date is not None else "Unknown"
+                
+                shares = int(t.get("Shares") or 0) if t.get("Shares") is not None else 0
+                value = int(t.get("Value") or 0) if t.get("Value") is not None else 0
+                text = str(t.get("Text") or "")
+                insider_name = str(t.get("Insider") or "Unknown")
+                position = str(t.get("Position") or "Insider")
+                
+                # Determine transaction type
+                tx_type = "SELL" if "sale" in text.lower() else ("BUY" if "purchase" in text.lower() else "OTHER")
+                
+                formatted_tx.append({
+                    "date": date_str,
+                    "insider": insider_name,
+                    "position": position,
+                    "shares": shares,
+                    "value": value,
+                    "text": text,
+                    "type": tx_type,
+                    "ownership": str(t.get("Ownership") or "D")
+                })
+
+        has_data = bool(purchases_shares > 0 or sales_shares > 0 or formatted_tx)
+        
+        # Derive sentiment label
+        if not has_data:
+            sentiment_label = "No Recent Form 4 Filings"
+        elif net_shares < -100_000 or (sales_shares > purchases_shares * 3 and sales_shares > 500_000):
+            sentiment_label = "Heavy Net Insider Selling"
+        elif net_shares > 50_000 or (purchases_shares > sales_shares and purchases_shares > 100_000):
+            sentiment_label = "Net Insider Accumulation"
+        elif sales_shares > purchases_shares:
+            sentiment_label = "Moderate Insider Selling"
+        else:
+            sentiment_label = "Neutral / Balanced Activity"
+
+        return {
+            "has_data": has_data,
+            "purchases_shares": purchases_shares,
+            "purchases_trans": purchases_trans,
+            "sales_shares": sales_shares,
+            "sales_trans": sales_trans,
+            "net_shares": net_shares,
+            "total_held": total_held,
+            "sentiment_label": sentiment_label,
+            "recent_transactions": formatted_tx
+        }
+    except Exception as e:
+        logger.error(f"Error fetching insider data for {ticker_symbol}: {e}")
+        return default_payload
+
+def fetch_congressional_trades(ticker_symbol: str, limit: int = 3) -> list:
+    """
+    Searches for recent Congressional and Senate STOCK Act disclosure reports for the given ticker.
+    """
+    ticker_symbol = TICKER_ALIASES.get(ticker_symbol.upper(), ticker_symbol.upper())
+    query = f"{ticker_symbol} stock congressional trading disclosure representative senator purchase sale"
+    logger.info(f"Running Congressional trading search for {ticker_symbol} with query: '{query}'")
+    try:
+        with DDGS() as ddgs:
+            results = ddgs.text(query, max_results=limit)
+            formatted = []
+            for r in results:
+                formatted.append({
+                    "title": r.get("title"),
+                    "link": r.get("href"),
+                    "snippet": r.get("body")
+                })
+            return formatted
+    except Exception as e:
+        logger.error(f"Error executing congressional web search for {ticker_symbol}: {e}")
         return []
 
 def is_valid_ticker(ticker_symbol: str) -> bool:
