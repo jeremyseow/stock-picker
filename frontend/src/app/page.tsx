@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
+import { API_BASE } from "@/lib/api";
 
 interface Ticker {
   id: number;
@@ -22,10 +23,12 @@ interface Ticker {
 export default function Home() {
   const [tickers, setTickers] = useState<Ticker[]>([]);
   const [loading, setLoading] = useState(true);
+  const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    fetch("http://localhost:8000/api/tickers/today")
+  const fetchData = () => {
+    setLoading(true);
+    fetch(`${API_BASE}/api/tickers/today`)
       .then((res) => {
         if (!res.ok) throw new Error("Failed to fetch todays tickers");
         return res.json();
@@ -38,7 +41,24 @@ export default function Home() {
         setError(err.message);
         setLoading(false);
       });
+  };
+
+  useEffect(() => {
+    fetchData();
   }, []);
+
+  const handleTriggerRun = async () => {
+    setRunning(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/pipeline/trigger`, { method: "POST" });
+      if (!res.ok) throw new Error("Failed to run Retail Momentum pipeline");
+      fetchData();
+    } catch (err: any) {
+      alert(err.message || "Error running Retail Momentum pipeline");
+    } finally {
+      setRunning(false);
+    }
+  };
 
   const getRecommendationBadge = (rec: "BUY" | "SELL" | "HOLD" | null) => {
     switch (rec) {
@@ -154,7 +174,23 @@ export default function Home() {
           <div className="max-w-md mx-auto bg-slate-900/50 border border-slate-800 rounded-2xl p-8 text-center">
             <span className="text-3xl mb-3 block">📭</span>
             <h3 className="text-lg font-bold text-slate-300">No stocks picked yet</h3>
-            <p className="text-slate-500 text-sm mt-1">Today's pipeline might still be running or hasn't started yet.</p>
+            <p className="text-slate-500 text-sm mt-1 mb-6">
+              Today's pipeline might still be running or hasn't started yet.
+            </p>
+            <button
+              onClick={handleTriggerRun}
+              disabled={running}
+              className="px-6 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/30 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 mx-auto cursor-pointer"
+            >
+              {running ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                  <span>Running Pipeline...</span>
+                </>
+              ) : (
+                <span>Run Retail Pipeline Now</span>
+              )}
+            </button>
           </div>
         )}
 

@@ -88,8 +88,12 @@ def test_fetch_insider_data_with_mock_yfinance():
     assert len(data["recent_transactions"]) == 2
     assert data["recent_transactions"][0]["insider"] == "Jane Doe"
     assert data["recent_transactions"][0]["type"] == "BUY"
+    assert data["recent_transactions"][0]["price"] == "$250.00"
+    assert data["recent_transactions"][0]["details"] == "Purchase"
     assert data["recent_transactions"][1]["insider"] == "John Smith"
     assert data["recent_transactions"][1]["type"] == "SELL"
+    assert data["recent_transactions"][1]["price"] == "$250.00"
+    assert data["recent_transactions"][1]["details"] == "Sale"
 
 
 def test_fetch_insider_data_empty_fallback():

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
+import { API_BASE } from "@/lib/api";
 
 interface ReportItem {
   id: number;
@@ -32,7 +33,7 @@ export default function HistoricalReportsPage() {
 
   // Fetch available report dates
   useEffect(() => {
-    fetch("http://localhost:8000/api/reports/dates")
+    fetch(`${API_BASE}/api/reports/dates`)
       .then((res) => {
         if (!res.ok) throw new Error("Failed to load historical dates");
         return res.json();
@@ -54,7 +55,7 @@ export default function HistoricalReportsPage() {
   useEffect(() => {
     if (!selectedDate) return;
     setLoadingReports(true);
-    fetch(`http://localhost:8000/api/reports?date=${selectedDate}`)
+    fetch(`${API_BASE}/api/reports?date=${selectedDate}`)
       .then((res) => {
         if (!res.ok) throw new Error(`Failed to load reports for ${selectedDate}`);
         return res.json();

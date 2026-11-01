@@ -145,3 +145,25 @@ async def test_send_daily_digest_network_exception_handled():
         )
         assert success is False
 
+
+@pytest.mark.asyncio
+async def test_send_daily_digest_duplicate_suppression():
+    """Verify identical message sent within cooldown is suppressed and does not make duplicate HTTP calls."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+
+    reports = [{"ticker": "DEDUP_TEST", "recommendation": "BUY", "current_price": 100.0}]
+
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+        mock_post.return_value = mock_resp
+
+        # First call should make an HTTP POST
+        res1 = await send_daily_digest(reports, bot_token="token", chat_id="123")
+        assert res1 is True
+        assert mock_post.call_count == 1
+
+        # Second call with identical content within cooldown should be suppressed (no additional HTTP call)
+        res2 = await send_daily_digest(reports, bot_token="token", chat_id="123")
+        assert res2 is True
+        assert mock_post.call_count == 1
+

@@ -6,6 +6,8 @@ export interface InsiderTransaction {
   position: string;
   shares: number;
   value: number;
+  price?: string | number;
+  details?: string;
   text: string;
   type: "BUY" | "SELL" | "OTHER";
   ownership: string;
@@ -62,6 +64,37 @@ export default function SmartMoneyRadar({ verdict, insiderData }: SmartMoneyRada
     if (val >= 1e6) return `$${(val / 1e6).toFixed(2)}M`;
     if (val >= 1e3) return `$${(val / 1e3).toFixed(1)}k`;
     return `$${val.toLocaleString()}`;
+  };
+
+  const parseTransactionPriceAndDetails = (tx: InsiderTransaction) => {
+    if (tx.price && tx.price !== "-") {
+      const formattedPrice = typeof tx.price === "number" ? `$${tx.price.toFixed(2)}` : String(tx.price);
+      const details = tx.details || tx.text || "-";
+      return { price: formattedPrice, details };
+    }
+
+    const text = tx.text || "";
+    const match = text.match(/(?:at price|price:?)\s+([\d]+(?:\.\d+)?(?:\s*-\s*[\d]+(?:\.\d+)?)?)/i);
+    let priceStr = "-";
+    let details = text;
+
+    if (match) {
+      const rawP = match[1].trim();
+      if (rawP.includes("-")) {
+        priceStr = rawP.split("-").map((p) => `$${p.trim()}`).join(" - ");
+      } else if (rawP) {
+        priceStr = rawP.startsWith("$") ? rawP : `$${rawP}`;
+      }
+      details = text
+        .replace(/at price\s+[\$\d\s.,-]+per share\.?/i, "")
+        .replace(/at price\s+[\$\d\s.,-]+\.?/i, "")
+        .trim();
+      details = details.replace(/Stock Award\(Grant\)/i, "Stock Award (Grant)");
+    } else if (tx.value > 0 && tx.shares > 0) {
+      priceStr = `$${(tx.value / tx.shares).toFixed(2)}`;
+    }
+
+    return { price: priceStr, details: details || text || "-" };
   };
 
   const getVerdictStyle = (v?: string | null) => {
@@ -256,51 +289,58 @@ export default function SmartMoneyRadar({ verdict, insiderData }: SmartMoneyRada
                         <th className="py-2.5 px-4">Date</th>
                         <th className="py-2.5 px-4">Insider / Position</th>
                         <th className="py-2.5 px-4">Type</th>
+                        <th className="py-2.5 px-4 text-right">Price</th>
                         <th className="py-2.5 px-4 text-right">Shares</th>
                         <th className="py-2.5 px-4 text-right">Value</th>
                         <th className="py-2.5 px-4">Details</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/60 bg-slate-900/20">
-                      {transactions.map((tx, idx) => (
-                        <tr key={idx} className="hover:bg-slate-800/30 transition-colors">
-                          <td className="py-3 px-4 font-mono text-slate-400 text-[11px] whitespace-nowrap">
-                            {tx.date}
-                          </td>
-                          <td className="py-3 px-4">
-                            <span className="font-bold text-slate-200 block truncate max-w-[180px]">
-                              {tx.insider}
-                            </span>
-                            <span className="text-[10px] text-slate-400 truncate max-w-[180px] block">
-                              {tx.position}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 whitespace-nowrap">
-                            {tx.type === "BUY" ? (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                                BUY
+                      {transactions.map((tx, idx) => {
+                        const { price, details } = parseTransactionPriceAndDetails(tx);
+                        return (
+                          <tr key={idx} className="hover:bg-slate-800/30 transition-colors">
+                            <td className="py-3 px-4 font-mono text-slate-400 text-[11px] whitespace-nowrap">
+                              {tx.date}
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className="font-bold text-slate-200 block truncate max-w-[180px]">
+                                {tx.insider}
                               </span>
-                            ) : tx.type === "SELL" ? (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-rose-500/10 text-rose-400 border border-rose-500/20">
-                                SELL
+                              <span className="text-[10px] text-slate-400 truncate max-w-[180px] block">
+                                {tx.position}
                               </span>
-                            ) : (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-slate-400 border border-slate-700">
-                                {tx.type}
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-3 px-4 text-right font-mono font-bold text-slate-200">
-                            {tx.shares > 0 ? formatNumber(tx.shares) : "-"}
-                          </td>
-                          <td className="py-3 px-4 text-right font-mono font-bold text-slate-200">
-                            {tx.value > 0 ? formatCurrency(tx.value) : "-"}
-                          </td>
-                          <td className="py-3 px-4 text-slate-400 text-[11px] max-w-[220px] truncate" title={tx.text}>
-                            {tx.text || "-"}
-                          </td>
-                        </tr>
-                      ))}
+                            </td>
+                            <td className="py-3 px-4 whitespace-nowrap">
+                              {tx.type === "BUY" ? (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                  BUY
+                                </span>
+                              ) : tx.type === "SELL" ? (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-black bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                                  SELL
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-slate-400 border border-slate-700">
+                                  {tx.type}
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 text-right font-mono font-bold text-slate-200 whitespace-nowrap">
+                              {price}
+                            </td>
+                            <td className="py-3 px-4 text-right font-mono font-bold text-slate-200">
+                              {tx.shares > 0 ? formatNumber(tx.shares) : "-"}
+                            </td>
+                            <td className="py-3 px-4 text-right font-mono font-bold text-slate-200">
+                              {tx.value > 0 ? formatCurrency(tx.value) : "-"}
+                            </td>
+                            <td className="py-3 px-4 text-slate-400 text-[11px] max-w-[220px] truncate" title={details}>
+                              {details}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

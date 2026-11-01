@@ -25,19 +25,26 @@ The application functions as a monolith containing both the `reddit-scraper` and
 
 ```mermaid
 graph TD
-    A[APScheduler / Trigger] -->|Triggers| B[run_pipeline.py]
-    B -->|Step 1: Scrape Subreddits| C[reddit_scraper.py]
-    C -->|OAuth GET /r/{sub}/hot + /comments| D[Reddit OAuth API]
-    C -->|Extracts posts & comments| F[ticker_extractor.py]
-    F -->|Scores raw candidates| B
-    B -->|Step 2: Validate Tickers| G[market_researcher.py / yfinance]
-    G -->|Checks price & market cap| B
-    B -->|Step 3: Research valid tickers| H[market_researcher.py]
-    H -->|Fetches price, news, filings & web search| B
-    B -->|Step 4: Analyze & recommendation| I[agent.py / Pydantic AI]
-    I -->|Generates StockReport via Gemini| J[crud.py / SQLite Database]
-    J -->|Saves report| K[(stock_analyzer.db)]
-    L[FastAPI Server] -->|Queries| J
+    subgraph Engine 1: Retail Momentum
+        E1_RUN[pipeline.py] -->|Step 1: Scrape Subreddits| C[reddit_scraper.py]
+        C -->|OAuth GET| D[Reddit OAuth API]
+        C -->|Posts & Comments| F[ticker_extractor.py]
+        F -->|Top Valid Tickers| H[market_researcher.py]
+        H -->|Financials & SEC Filings| I[agent.py / Gemini]
+        I -->|StockReport| DB[(SQLite Database)]
+    end
+
+    subgraph Engine 2: Smart Money Scout
+        E2_RUN[smart_money_pipeline.py] -->|Step 1: Ingest Filings| ING[smart_money_ingestor.py]
+        ING -->|SEC Form 4 Code P & Congress PTR| SCOR[smart_money_scorer.py]
+        SCOR -->|Top Conviction Tickers| RES[smart_money_researcher.py]
+        RES -->|Catalyst & Legislative Research| DB
+    end
+
+    subgraph Cross-Engine Synthesis
+        SYN[synthesis_engine.py] -->|Correlates E1 & E2| DB
+        SYN -->|Archetypes: Rocket, Retail Trap, Silent Accumulation| API[FastAPI Server]
+    end
 ```
 
 ### Project Structure
@@ -45,18 +52,25 @@ graph TD
 ```
 backend/
 ├── app/
-│   ├── agent.py              # LLM agent definition & structured stock evaluator
-│   ├── crud.py               # Database CRUD operations
-│   ├── database.py           # DB connection & session creation
-│   ├── llm_schemas.py        # Pydantic schemas for Gemini structured outputs
-│   ├── main.py               # FastAPI application definition and endpoints
-│   ├── market_researcher.py  # Wrapper around yfinance for metrics, filings, and news
-│   ├── models.py             # SQLAlchemy models
-│   ├── reddit_scraper.py     # Multi-subreddit Reddit OAuth API client (Client Credentials)
-│   ├── scheduler.py          # Daily APScheduler integration
-│   ├── telegram_notifier.py  # Telegram Bot API client for consolidated daily digests
-│   └── ticker_extractor.py   # Regex ticker extractor and engagement scorer
-├── tests/                    # LLM behavior and validation test suites
+│   ├── agent.py                 # LLM agent for retail reports & trajectory analysis
+│   ├── crud.py                  # Database CRUD for E1, E2, and Synthesis
+│   ├── database.py              # DB connection & session creation
+│   ├── llm_schemas.py           # Pydantic schemas (StockReport, Trajectory, SmartMoney)
+│   ├── main.py                  # FastAPI application endpoints
+│   ├── market_researcher.py     # yfinance & search wrapper for metrics and filings
+│   ├── models.py                # SQLAlchemy models (E1, E2, Trajectory, Synthesis)
+│   ├── pipeline.py              # Engine 1 pipeline runner
+│   ├── reddit_scraper.py        # Multi-subreddit Reddit OAuth API client
+│   ├── scheduler.py             # Daily APScheduler integration
+│   ├── smart_money_ingestor.py  # Form 4 (Code P) and Congressional PTR ingestor
+│   ├── smart_money_pipeline.py  # Engine 2 pipeline orchestrator
+│   ├── smart_money_researcher.py# Legislative & turnaround catalyst researcher
+│   ├── smart_money_scorer.py    # Multi-factor conviction scoring formula
+│   ├── synthesis_engine.py      # Cross-engine market archetype classifier
+│   ├── telegram_notifier.py     # Telegram Bot API client for daily digests
+│   └── ticker_extractor.py      # Regex ticker extractor and engagement scorer
+├── tests/                       # Unit test suites (35 tests passing)
+```
 ├── pyproject.toml            # Project configuration and uv dependencies
 ├── run_pipeline.py           # Executable entry point to run pipeline manually
 └── send_test_telegram.py     # CLI tool to test or manually dispatch today's digest
@@ -119,12 +133,20 @@ The API will be available at `http://localhost:8000`.
 - Tracked Tickers Catalog: `http://localhost:8000/api/analytics/tickers` lists all tickers with saved reports.
 - Ticker Trajectory History: `http://localhost:8000/api/analytics/ticker/{ticker}` returns chronological run reports and price points.
 - Trajectory Meta-Analysis: `POST /api/analytics/ticker/{ticker}/meta-analysis` synthesizes multi-day retail divergence and catalyst follow-through via Gemini (cached in SQLite).
+- On-Demand Triggers: `POST /api/pipeline/trigger` (Engine 1) and `POST /api/smart-money/trigger` (Engine 2 + Synthesis).
 
-### Running the Pipeline Manually
+### Running Pipelines & Resetting the Database via CLI
 
-If you don't want to wait for the scheduler to trigger, you can run the pipeline directly:
+You can run individual engines, or completely reset the database and execute both pipelines end-to-end:
 
 ```bash
+# Reset database and run Engine 1, Engine 2, and Cross-Engine Synthesis:
+uv run python scripts/reset_and_run.py
+
+# Only reset/clear the database without running pipelines:
+uv run python scripts/reset_and_run.py --reset-only
+
+# Run only Engine 1:
 uv run python run_pipeline.py
 ```
 

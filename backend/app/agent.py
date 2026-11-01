@@ -1,5 +1,5 @@
 import os
-from pydantic_ai import Agent, RunContext
+from pydantic_ai import Agent
 from app.llm_schemas import StockReport, TrajectoryAnalysis
 import logging
 

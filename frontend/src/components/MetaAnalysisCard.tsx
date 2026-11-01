@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { API_BASE } from "@/lib/api";
 
 interface MetaAnalysisData {
   id?: number;
@@ -29,7 +30,7 @@ export default function MetaAnalysisCard({ ticker, reportCount }: MetaAnalysisCa
     setLoading(true);
     setError("");
 
-    fetch(`http://localhost:8000/api/analytics/ticker/${ticker}/meta-analysis`)
+    fetch(`${API_BASE}/api/analytics/ticker/${ticker}/meta-analysis`)
       .then((res) => {
         if (!res.ok) throw new Error("Failed to check trajectory analysis cache");
         return res.json();
@@ -60,7 +61,7 @@ export default function MetaAnalysisCard({ ticker, reportCount }: MetaAnalysisCa
     setGenerating(true);
     setError("");
     try {
-      const url = `http://localhost:8000/api/analytics/ticker/${ticker}/meta-analysis?force_refresh=${forceRefresh}`;
+      const url = `${API_BASE}/api/analytics/ticker/${ticker}/meta-analysis?force_refresh=${forceRefresh}`;
       const res = await fetch(url, { method: "POST" });
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}));

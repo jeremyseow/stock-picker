@@ -1,9 +1,16 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import func, desc, distinct
-from app.models import DailyTicker, TickerReport, TickerTrajectoryAnalysis
+from datetime import timedelta
+from app.models import (
+    DailyTicker,
+    TickerReport,
+    TickerTrajectoryAnalysis,
+    SmartMoneyTicker,
+    SmartMoneyReport,
+    SynthesisRecord,
+)
 from app.llm_schemas import StockReport, TrajectoryAnalysis
-import json
 
 async def save_daily_tickers(db: AsyncSession, tickers_with_context: list):
     """
@@ -134,3 +141,138 @@ async def save_trajectory_analysis(
     await db.commit()
     await db.refresh(db_analysis)
     return db_analysis
+
+
+# ==========================================
+# Engine 2: Smart Money & Political CRUD
+# ==========================================
+
+async def save_smart_money_tickers(db: AsyncSession, scored_candidates: list[dict]) -> list[SmartMoneyTicker]:
+    """Save the top ranked smart money tickers from Engine 2."""
+    saved = []
+    for idx, item in enumerate(scored_candidates):
+        row = SmartMoneyTicker(
+            ticker=item["ticker"].upper(),
+            rank=idx + 1,
+            conviction_score=item.get("conviction_score", 0.0),
+            insider_score=item.get("insider_score", 0.0),
+            political_score=item.get("political_score", 0.0),
+            cluster_count=item.get("cluster_count", 0),
+            total_buy_volume=item.get("total_buy_volume", 0.0),
+            top_buyer_summary=item.get("top_buyer_summary", "")
+        )
+        db.add(row)
+        saved.append(row)
+    await db.commit()
+    return saved
+
+
+async def get_latest_smart_money_tickers(db: AsyncSession) -> list[SmartMoneyTicker]:
+    """Retrieve the most recent run's smart money tickers."""
+    latest_ts_query = select(func.max(SmartMoneyTicker.date))
+    latest_ts_res = await db.execute(latest_ts_query)
+    latest_ts = latest_ts_res.scalar_one_or_none()
+    if not latest_ts:
+        return []
+
+    query = (
+        select(SmartMoneyTicker)
+        .where(SmartMoneyTicker.date >= latest_ts - timedelta(minutes=2))
+        .order_by(SmartMoneyTicker.rank.asc())
+    )
+    result = await db.execute(query)
+    return list(result.scalars().all())
+
+
+async def save_smart_money_report(db: AsyncSession, report_data: dict) -> SmartMoneyReport:
+    """Save an Engine 2 catalyst intelligence report."""
+    row = SmartMoneyReport(
+        ticker=report_data["ticker"].upper(),
+        company_name=report_data.get("company_name", ""),
+        sector=report_data.get("sector", ""),
+        industry=report_data.get("industry", ""),
+        current_price=report_data.get("current_price"),
+        target_price=report_data.get("target_price"),
+        conviction_score=report_data.get("conviction_score", 0.0),
+        conviction_tier=report_data.get("conviction_tier", "High Conviction Catalyst Buy"),
+        inflow_ledger=report_data.get("inflow_ledger", []),
+        political_catalyst_analysis=report_data.get("political_catalyst_analysis", ""),
+        corporate_catalyst_analysis=report_data.get("corporate_catalyst_analysis", ""),
+        catalyst_horizon=report_data.get("catalyst_horizon", ""),
+        actionable_thesis=report_data.get("actionable_thesis", ""),
+        raw_metrics=report_data.get("raw_metrics", {})
+    )
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+    return row
+
+
+async def get_latest_smart_money_report(db: AsyncSession, ticker: str) -> SmartMoneyReport | None:
+    """Fetch the latest smart money catalyst report for a specific ticker."""
+    query = (
+        select(SmartMoneyReport)
+        .where(SmartMoneyReport.ticker == ticker.upper())
+        .order_by(desc(SmartMoneyReport.date))
+        .limit(1)
+    )
+    result = await db.execute(query)
+    return result.scalar_one_or_none()
+
+
+# ==========================================
+# Cross-Engine Synthesis CRUD
+# ==========================================
+
+async def save_synthesis_records(db: AsyncSession, records: list[dict]) -> list[SynthesisRecord]:
+    """Save cross-engine synthesis archetype classifications."""
+    saved = []
+    for item in records:
+        row = SynthesisRecord(
+            ticker=item["ticker"].upper(),
+            archetype=item.get("archetype", "Market Noise"),
+            retail_rank=item.get("retail_rank"),
+            retail_mentions=item.get("retail_mentions", 0),
+            retail_sentiment=item.get("retail_sentiment"),
+            smart_money_rank=item.get("smart_money_rank"),
+            smart_money_conviction=item.get("smart_money_conviction", 0.0),
+            smart_money_flow=item.get("smart_money_flow"),
+            retail_awareness_level=item.get("retail_awareness_level", "Zero Awareness (Stealth)"),
+            timing_edge_score=item.get("timing_edge_score", 0.0),
+            synthesis_diagnosis=item.get("synthesis_diagnosis", ""),
+            recommended_action=item.get("recommended_action", "PASS")
+        )
+        db.add(row)
+        saved.append(row)
+    await db.commit()
+    return saved
+
+
+async def get_latest_synthesis_records(db: AsyncSession) -> list[SynthesisRecord]:
+    """Retrieve the latest synthesis matrix records."""
+    latest_ts_query = select(func.max(SynthesisRecord.date))
+    latest_ts_res = await db.execute(latest_ts_query)
+    latest_ts = latest_ts_res.scalar_one_or_none()
+    if not latest_ts:
+        return []
+
+    query = (
+        select(SynthesisRecord)
+        .where(SynthesisRecord.date >= latest_ts - timedelta(minutes=2))
+        .order_by(SynthesisRecord.timing_edge_score.desc())
+    )
+    result = await db.execute(query)
+    return list(result.scalars().all())
+
+
+async def get_synthesis_record_by_ticker(db: AsyncSession, ticker: str) -> SynthesisRecord | None:
+    """Retrieve the latest synthesis record for a ticker."""
+    query = (
+        select(SynthesisRecord)
+        .where(SynthesisRecord.ticker == ticker.upper())
+        .order_by(desc(SynthesisRecord.date))
+        .limit(1)
+    )
+    result = await db.execute(query)
+    return result.scalar_one_or_none()
+

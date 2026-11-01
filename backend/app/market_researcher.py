@@ -1,5 +1,6 @@
 import yfinance as yf
 import logging
+import re
 from ddgs import DDGS
 from app.ticker_extractor import TICKER_ALIASES
 
@@ -169,12 +170,33 @@ def fetch_insider_data(ticker_symbol: str, limit: int = 8) -> dict:
                 # Determine transaction type
                 tx_type = "SELL" if "sale" in text.lower() else ("BUY" if "purchase" in text.lower() else "OTHER")
                 
+                # Extract execution price if present
+                price_match = re.search(r'(?:at price|price:?)\s+([\d]+(?:\.\d+)?(?:\s*-\s*[\d]+(?:\.\d+)?)?)', text, re.I)
+                if price_match:
+                    raw_p = price_match.group(1).strip()
+                    if "-" in raw_p:
+                        price_str = " - ".join(f"${p.strip()}" for p in raw_p.split("-"))
+                    else:
+                        price_str = f"${raw_p}" if not raw_p.startswith("$") else raw_p
+                elif value > 0 and shares > 0:
+                    price_str = f"${(value / shares):.2f}"
+                else:
+                    price_str = "-"
+
+                cleaned_details = re.sub(r'at price\s+[\$\d\s.,-]+per share\.?', '', text, flags=re.I)
+                cleaned_details = re.sub(r'at price\s+[\$\d\s.,-]+\.?', '', cleaned_details, flags=re.I).strip()
+                cleaned_details = re.sub(r'Stock Award\(Grant\)', 'Stock Award (Grant)', cleaned_details, flags=re.I)
+                if not cleaned_details:
+                    cleaned_details = text
+
                 formatted_tx.append({
                     "date": date_str,
                     "insider": insider_name,
                     "position": position,
                     "shares": shares,
                     "value": value,
+                    "price": price_str,
+                    "details": cleaned_details,
                     "text": text,
                     "type": tx_type,
                     "ownership": str(t.get("Ownership") or "D")
@@ -233,8 +255,8 @@ def fetch_congressional_trades(ticker_symbol: str, limit: int = 3) -> list:
 
 def is_valid_ticker(ticker_symbol: str) -> bool:
     """
-    Validates a ticker symbol by checking if yfinance has a valid price and market cap.
-    This helps filter out noise words like OP, CALLS, SOH, CNBC, PE, JUST.
+    Validates a ticker symbol by checking if yfinance has a valid price, market cap, and active trading.
+    This helps filter out noise words like OP, CALLS, SOH, CNBC, PE, JUST, PC.
     """
     ticker_symbol = TICKER_ALIASES.get(ticker_symbol.upper(), ticker_symbol.upper())
     logger.info(f"Validating ticker symbol: {ticker_symbol}")
@@ -243,9 +265,13 @@ def is_valid_ticker(ticker_symbol: str) -> bool:
         info = stock.info
         price = info.get("currentPrice") or info.get("regularMarketPrice")
         market_cap = info.get("marketCap")
-        if price is not None and market_cap is not None:
-            logger.info(f"Ticker {ticker_symbol} is valid (Price: {price}, Market Cap: {market_cap})")
-            return True
+        volume = info.get("averageVolume") or info.get("volume") or info.get("regularMarketVolume") or 0
+        quote_type = (info.get("quoteType") or "").upper()
+
+        if price is not None and market_cap is not None and market_cap > 5_000_000 and volume > 0:
+            if quote_type in ("", "EQUITY"):
+                logger.info(f"Ticker {ticker_symbol} is valid (Price: {price}, Market Cap: {market_cap}, Volume: {volume})")
+                return True
     except Exception as e:
         logger.warning(f"Validation error/failed for ticker {ticker_symbol}: {e}")
     logger.info(f"Ticker {ticker_symbol} is INVALID")

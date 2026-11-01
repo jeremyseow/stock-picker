@@ -7,7 +7,9 @@ export default function Navbar() {
   const pathname = usePathname();
 
   const navItems = [
-    { label: "Dashboard", href: "/" },
+    { label: "Retail Momentum", href: "/" },
+    { label: "Smart Money & Gov", href: "/smart-money" },
+    { label: "Synthesis Matrix", href: "/synthesis" },
     { label: "Historical Reports", href: "/stats" },
     { label: "Ticker Analytics", href: "/analytics" },
   ];

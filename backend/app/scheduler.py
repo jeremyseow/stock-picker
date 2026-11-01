@@ -2,14 +2,26 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from zoneinfo import ZoneInfo
 import logging
 from app.pipeline import run_analysis_pipeline
+from app.smart_money_pipeline import run_smart_money_pipeline
+from app.synthesis_engine import generate_cross_engine_synthesis
+from app.database import AsyncSessionLocal
 
 logger = logging.getLogger(__name__)
 
 async def daily_pipeline_job():
-    logger.info("Starting scheduled daily Reddit scraping and market research pipeline...")
+    logger.info("Starting scheduled daily Dual-Engine market intelligence pipeline...")
     try:
+        logger.info("Executing Engine 1: Retail Momentum...")
         await run_analysis_pipeline()
-        logger.info("Scheduled daily pipeline job completed successfully.")
+
+        logger.info("Executing Engine 2: Smart Money & Political Scout...")
+        await run_smart_money_pipeline()
+
+        logger.info("Executing Cross-Engine Synthesis Hub...")
+        async with AsyncSessionLocal() as db:
+            await generate_cross_engine_synthesis(db)
+
+        logger.info("Scheduled daily dual-engine pipeline completed successfully.")
     except Exception as e:
         logger.error(f"Error running scheduled daily pipeline job: {e}")
 

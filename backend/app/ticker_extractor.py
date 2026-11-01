@@ -10,7 +10,10 @@ BLACKLIST = {
     "SEE", "TOO", "WAY", "WHO", "WHY", "YES", "YOU", "NEW", "BUY", "SELL", "CALL", "PUT", "AND", "HAS", "NOT",
     "BUT", "ANY", "CAN", "DID", "GET", "HAD", "HER", "HIM", "HIS", "HOW", "MAN", "MAY", "OUR", "OUT", "SHE",
     "THEY", "WAS", "ONE", "TWO", "SIX", "TEN", "DAY", "RUN", "WOW", "BIG", "BAD", "MAD", "SAD", "GLD", "SLV",
-    "AI", "PE"
+    "AI", "PE", "PC", "EV", "CC", "ITM", "OTM", "ATM", "IV", "DCA", "NAV", "TA", "FA", "RH",
+    "CPU", "GPU", "RAM", "SSD", "HDD", "OS", "UI", "UX", "API", "SDK", "IP", "TV", "VR", "AR",
+    "OP", "CNBC", "WSJ", "FT", "DTE", "PCE", "FOMC", "PT", "ER", "PR",
+    "SPY", "QQQ", "IWM", "DIA", "VOO", "VTI"
 }
 
 # Ticker aliases mapping secondary share classes or common synonyms to the official primary security

@@ -23,3 +23,20 @@ class TrajectoryAnalysis(BaseModel):
     divergence_analysis: str = Field(description="Analysis of divergence or convergence between retail hype/sentiment and actual stock price movements across the historical reports.")
     catalyst_follow_through: str = Field(description="Evaluation of whether previously identified catalysts, actionable insights, and corporate watchpoints played out across subsequent reports.")
     trajectory_outlook: str = Field(description="Longitudinal outlook synthesizing the multi-day trend, consensus stability, and overall risk posture.")
+
+class SmartMoneyCatalystAnalysis(BaseModel):
+    conviction_tier: Literal["High Conviction Catalyst Buy", "Speculative Accumulation", "Moderate Cluster"] = Field(
+        description="Assessed tier based on buyer seniority, cluster size, and policy alignment."
+    )
+    political_catalyst_analysis: str = Field(
+        description="Analysis of relevant legislative bills, government subsidies, committee oversight, or geopolitical developments related to the buyers."
+    )
+    corporate_catalyst_analysis: str = Field(
+        description="Analysis of corporate turnaround signals, earnings catalysts, contract awards, or valuation discrepancies prompting insider buying."
+    )
+    catalyst_horizon: str = Field(
+        description="Projected timeline for catalyst realization (e.g. '30-60 days ahead of Q4 earnings & defense markup')."
+    )
+    actionable_thesis: str = Field(
+        description="Clear, actionable swing trade thesis detailing entry rationale and primary risk factors."
+    )

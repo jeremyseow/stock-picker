@@ -4,6 +4,7 @@ import { useEffect, useState, use } from "react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import SmartMoneyRadar, { RawInsiderData } from "@/components/SmartMoneyRadar";
+import { API_BASE } from "@/lib/api";
 
 interface RawMetrics {
   current_price?: number | null;
@@ -54,7 +55,7 @@ export default function ReportPage({ params }: { params: Promise<{ ticker: strin
   const [error, setError] = useState("");
 
   useEffect(() => {
-    fetch(`http://localhost:8000/api/reports/${ticker}`)
+    fetch(`${API_BASE}/api/reports/${ticker}`)
       .then((res) => {
         if (!res.ok) throw new Error("Report not found in database");
         return res.json();

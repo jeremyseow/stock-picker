@@ -1,10 +1,8 @@
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from app.reddit_scraper import (
     RedditOAuthClient,
     RedditAuthError,
-    RedditAPIError,
-    fetch_top_posts_and_comments,
     get_target_subreddits,
 )
 

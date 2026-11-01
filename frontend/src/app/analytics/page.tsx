@@ -9,6 +9,7 @@ import MetaAnalysisCard from "@/components/MetaAnalysisCard";
 import SentimentTrajectoryTimeline from "@/components/SentimentTrajectoryTimeline";
 import ValuationMetricsPanel from "@/components/ValuationMetricsPanel";
 import ActionableInsightsLog from "@/components/ActionableInsightsLog";
+import { API_BASE } from "@/lib/api";
 
 function AnalyticsContent() {
   const searchParams = useSearchParams();
@@ -24,7 +25,7 @@ function AnalyticsContent() {
 
   // 1. Fetch available tickers
   useEffect(() => {
-    fetch("http://localhost:8000/api/analytics/tickers")
+    fetch(`${API_BASE}/api/analytics/tickers`)
       .then((res) => {
         if (!res.ok) throw new Error("Failed to fetch tracked tickers");
         return res.json();
@@ -52,7 +53,7 @@ function AnalyticsContent() {
     setLoadingHistory(true);
     setError("");
 
-    fetch(`http://localhost:8000/api/analytics/ticker/${selectedTicker}`)
+    fetch(`${API_BASE}/api/analytics/ticker/${selectedTicker}`)
       .then((res) => {
         if (!res.ok) throw new Error(`Failed to load historical trajectory for ${selectedTicker}`);
         return res.json();

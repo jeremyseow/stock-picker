@@ -1,7 +1,6 @@
 import pytest
 import os
 from app.agent import generate_stock_report
-from app.llm_schemas import StockReport
 
 # To run this correctly, you'd need a real LLM API key, but we can set up the scaffolding.
 
@@ -46,4 +45,5 @@ def test_is_valid_ticker():
     assert is_valid_ticker("AAPL") is True
     assert is_valid_ticker("OP") is False
     assert is_valid_ticker("CALLS") is False
+    assert is_valid_ticker("PC") is False
 

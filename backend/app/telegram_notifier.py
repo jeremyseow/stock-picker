@@ -1,11 +1,17 @@
 import os
 import html
+import time
+import hashlib
 import logging
 from datetime import datetime, timezone
 import httpx
 from app.reddit_scraper import get_target_subreddits
 
 logger = logging.getLogger(__name__)
+
+# Deduplication state to prevent double delivery on concurrent / rapid triggers
+_last_sent_hash: str | None = None
+_last_sent_timestamp: float = 0.0
 
 
 def get_recommendation_badge(rec: str | None) -> str:
@@ -114,6 +120,15 @@ async def send_daily_digest(
         return False
 
     message_html = format_daily_digest(reports)
+
+    # Check deduplication hash and cooldown (5 minutes)
+    global _last_sent_hash, _last_sent_timestamp
+    msg_hash = hashlib.sha256(message_html.encode("utf-8")).hexdigest()
+    now = time.time()
+    if msg_hash == _last_sent_hash and (now - _last_sent_timestamp) < 300:
+        logger.info("Telegram daily digest already dispatched within the last 5 minutes (suppressing duplicate).")
+        return True
+
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     payload = {
         "chat_id": chat,
@@ -127,6 +142,8 @@ async def send_daily_digest(
             resp = await client.post(url, json=payload)
             if resp.status_code == 200:
                 logger.info(f"Telegram daily digest successfully delivered to chat_id {chat}.")
+                _last_sent_hash = msg_hash
+                _last_sent_timestamp = now
                 return True
             else:
                 logger.error(f"Telegram API responded with status {resp.status_code}: {resp.text}")

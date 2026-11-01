@@ -15,11 +15,17 @@ from app.crud import (
     get_distinct_tracked_tickers,
     get_ticker_history,
     get_cached_trajectory_analysis,
-    save_trajectory_analysis
+    save_trajectory_analysis,
+    get_latest_smart_money_tickers,
+    get_latest_smart_money_report,
+    get_latest_synthesis_records,
 )
+from app.pipeline import run_analysis_pipeline
+from app.smart_money_pipeline import run_smart_money_pipeline
+from app.smart_money_researcher import get_historical_trade_price
 from app.agent import generate_trajectory_analysis
 from app.ticker_extractor import TICKER_ALIASES
-from datetime import datetime, timezone, timedelta
+from datetime import timedelta
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -341,3 +347,124 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
     result = await db.execute(query)
     tickers = result.scalars().all()
     return tickers
+
+
+# ==========================================
+# Engine 2: Smart Money & Political Endpoints
+# ==========================================
+
+@app.get("/api/smart-money/today")
+async def get_today_smart_money(db: AsyncSession = Depends(get_db)):
+    """Fetch the latest Smart Money & Political Scout candidate tickers."""
+    tickers = await get_latest_smart_money_tickers(db)
+    results = []
+    for t in tickers:
+        report = await get_latest_smart_money_report(db, t.ticker)
+        results.append({
+            "id": t.id,
+            "date": t.date.isoformat(),
+            "ticker": t.ticker,
+            "rank": t.rank,
+            "conviction_score": t.conviction_score,
+            "insider_score": t.insider_score,
+            "political_score": t.political_score,
+            "cluster_count": t.cluster_count,
+            "total_buy_volume": t.total_buy_volume,
+            "top_buyer_summary": t.top_buyer_summary,
+            "conviction_tier": report.conviction_tier if report else "High Conviction Catalyst Buy",
+            "sector": report.sector if report else "General",
+            "industry": report.industry if report else "General",
+            "current_price": report.current_price if report else None,
+            "target_price": report.target_price if report else None,
+        })
+    return results
+
+
+@app.get("/api/smart-money/report/{ticker}")
+async def get_smart_money_report_detail(ticker: str, db: AsyncSession = Depends(get_db)):
+    """Fetch detailed smart money catalyst report and inflow ledger."""
+    rep = await get_latest_smart_money_report(db, ticker.upper())
+    if not rep:
+        raise HTTPException(status_code=404, detail=f"No smart money report found for ${ticker.upper()}")
+    
+    inflow_ledger = []
+    for item in (rep.inflow_ledger or []):
+        entry = dict(item)
+        if not entry.get("price") or entry.get("price") == "N/A":
+            t_date = entry.get("date")
+            p = get_historical_trade_price(rep.ticker, t_date) if t_date else None
+            if p:
+                entry["price"] = f"${p:.2f}"
+            elif rep.current_price:
+                entry["price"] = f"~${rep.current_price:.2f}"
+            else:
+                entry["price"] = "Market"
+        inflow_ledger.append(entry)
+
+    return {
+        "id": rep.id,
+        "ticker": rep.ticker,
+        "date": rep.date.isoformat(),
+        "company_name": rep.company_name,
+        "sector": rep.sector,
+        "industry": rep.industry,
+        "current_price": rep.current_price,
+        "target_price": rep.target_price,
+        "conviction_score": rep.conviction_score,
+        "conviction_tier": rep.conviction_tier,
+        "inflow_ledger": inflow_ledger,
+        "political_catalyst_analysis": rep.political_catalyst_analysis,
+        "corporate_catalyst_analysis": rep.corporate_catalyst_analysis,
+        "catalyst_horizon": rep.catalyst_horizon,
+        "actionable_thesis": rep.actionable_thesis,
+        "raw_metrics": rep.raw_metrics,
+    }
+
+
+# ==========================================
+# Cross-Engine Synthesis Endpoints
+# ==========================================
+
+@app.get("/api/synthesis/today")
+async def get_today_synthesis(db: AsyncSession = Depends(get_db)):
+    """Fetch the latest cross-engine archetype synthesis matrix records."""
+    records = await get_latest_synthesis_records(db)
+    return [
+        {
+            "id": r.id,
+            "ticker": r.ticker,
+            "date": r.date.isoformat(),
+            "archetype": r.archetype,
+            "retail_rank": r.retail_rank,
+            "retail_mentions": r.retail_mentions,
+            "retail_sentiment": r.retail_sentiment,
+            "smart_money_rank": r.smart_money_rank,
+            "smart_money_conviction": r.smart_money_conviction,
+            "smart_money_flow": r.smart_money_flow,
+            "retail_awareness_level": r.retail_awareness_level,
+            "timing_edge_score": r.timing_edge_score,
+            "synthesis_diagnosis": r.synthesis_diagnosis,
+            "recommended_action": r.recommended_action,
+        }
+        for r in records
+    ]
+
+
+@app.post("/api/pipeline/trigger")
+async def trigger_retail_pipeline():
+    """Triggers an on-demand execution of Engine 1 (Retail Momentum) and refreshes Cross-Engine Synthesis."""
+    logger.info("Manual trigger received for Engine 1 (Retail Momentum)...")
+    await run_analysis_pipeline()
+    return {"status": "success"}
+
+
+@app.post("/api/smart-money/trigger")
+async def trigger_smart_money_run():
+    """Triggers an on-demand execution of Engine 2 and refreshes Cross-Engine Synthesis."""
+    logger.info("Manual trigger received for Engine 2 (Smart Money Scout)...")
+    reports = await run_smart_money_pipeline(limit=5)
+    return {
+        "status": "success",
+        "smart_money_reports_count": len(reports),
+    }
+
