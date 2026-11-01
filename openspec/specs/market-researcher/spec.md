@@ -1,7 +1,8 @@
 # market-researcher Specification
 
 ## Purpose
-TBD - created by archiving change subreddit-stock-analyzer. Update Purpose after archive.
+Validates tradeable equity candidates, extracts financial ratios, recent SEC filings (10-K, 10-Q, 8-K), Form 4 insider transactions, and Congressional disclosures, and synthesizes them with social sentiment via Pydantic AI into objective, conservative equity research reports.
+
 ## Requirements
 ### Requirement: Ticker Validation Filter
 The system SHALL validate raw ticker symbols before generating reports. A ticker is only considered valid if a query to `yfinance` returns a valid market price (`currentPrice` or `regularMarketPrice`) and a non-empty market capitalization (`marketCap`).

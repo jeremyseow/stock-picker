@@ -127,7 +127,7 @@ export default function HistoricalReportsPage() {
       icon = "🟢";
     }
     return (
-      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-bold border text-right leading-tight max-w-[65%] shrink-0 ${color}`}>
+      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-bold border leading-tight min-w-0 max-w-[60%] shrink ${color}`}>
         <span className="shrink-0">{icon}</span>
         <span className="truncate">{verdict}</span>
       </span>
@@ -240,7 +240,7 @@ export default function HistoricalReportsPage() {
                       </div>
 
                       {/* Main Bar: Ticker & Smart Money Verdict */}
-                      <div className="flex items-start justify-between gap-4 mb-4">
+                      <div className="flex items-start justify-between gap-3 mb-4 min-w-0">
                         <div>
                           <span className="text-2xl font-black tracking-tight text-white group-hover:text-indigo-400 transition-colors">
                             ${rep.ticker}

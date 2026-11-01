@@ -85,7 +85,7 @@ export default function Home() {
       icon = "🟢";
     }
     return (
-      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-bold border text-right leading-tight max-w-[65%] shrink-0 ${color}`}>
+      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-bold border leading-tight min-w-0 max-w-[60%] shrink ${color}`}>
         <span className="shrink-0">{icon}</span>
         <span className="truncate">{verdict}</span>
       </span>
@@ -172,7 +172,7 @@ export default function Home() {
                   </div>
 
                   {/* Ticker & Smart Money Verdict Row */}
-                  <div className="flex justify-between items-center gap-4 mb-3">
+                  <div className="flex justify-between items-center gap-3 mb-3 min-w-0">
                     <h2 className="text-3xl font-black text-white group-hover:text-indigo-400 transition-colors shrink-0">
                       ${t.ticker}
                     </h2>

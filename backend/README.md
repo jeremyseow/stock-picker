@@ -7,7 +7,7 @@ This is the backend service for the Subreddit Stock Analyzer, an automated daily
 - **Framework:** FastAPI (Python)
 - **Dependency Management:** `uv`
 - **Database:** SQLite (SQLAlchemy + aiosqlite) for local persistence
-- **Scraping:** Public Reddit Atom/RSS feeds (via `httpx`), with rate-limit-aware throttling. (JSON endpoints and `old.reddit.com` are now blocked for logged-out clients.)
+- **Scraping:** Official Reddit OAuth API (via `httpx.AsyncClient` with Client Credentials grant) querying multi-subreddit feeds (`r/wallstreetbets`, `r/stocks`, `r/ValueInvesting`) with authentic upvote scores, comment trees, and 100 req/min allowance. Strictly fails fast if credentials are missing or invalid.
 - **Financial Data & Validation:** `yfinance` to validate candidate stock symbols (via price and market capitalization checks), fetch SEC filings, collect market metrics, and extract Form 4 insider transactions (`insider_purchases`, `insider_transactions`).
 - **Web Search Integration:** `ddgs` (DuckDuckGo search) to fetch the latest industry/corporate news and Congressional/political STOCK Act trading disclosures.
 - **AI/LLM:** Pydantic AI with Gemini 2.5 Pro (`gemini-2.5-pro`) to ensure structured outputs and enforce a strict "Default to HOLD" evaluation policy, blocking "BUY" recommendations if insiders are liquidating shares into retail hype.
@@ -26,8 +26,8 @@ The application functions as a monolith containing both the `reddit-scraper` and
 ```mermaid
 graph TD
     A[APScheduler / Trigger] -->|Triggers| B[run_pipeline.py]
-    B -->|Step 1: Scrape Subreddit| C[reddit_scraper.py]
-    C -->|HTTP GET /top/.rss + /comments/.rss| D[Reddit RSS Feeds]
+    B -->|Step 1: Scrape Subreddits| C[reddit_scraper.py]
+    C -->|OAuth GET /r/{sub}/hot + /comments| D[Reddit OAuth API]
     C -->|Extracts posts & comments| F[ticker_extractor.py]
     F -->|Scores raw candidates| B
     B -->|Step 2: Validate Tickers| G[market_researcher.py / yfinance]
@@ -52,7 +52,7 @@ backend/
 │   ├── main.py               # FastAPI application definition and endpoints
 │   ├── market_researcher.py  # Wrapper around yfinance for metrics, filings, and news
 │   ├── models.py             # SQLAlchemy models
-│   ├── reddit_scraper.py     # Rate-limited Reddit RSS feed scraper
+│   ├── reddit_scraper.py     # Multi-subreddit Reddit OAuth API client (Client Credentials)
 │   ├── scheduler.py          # Daily APScheduler integration
 │   ├── telegram_notifier.py  # Telegram Bot API client for consolidated daily digests
 │   └── ticker_extractor.py   # Regex ticker extractor and engagement scorer
@@ -64,10 +64,9 @@ backend/
 
 ### Key Design Choices & Trade-offs
 
-1. **RSS Feed Scraping**:
-   - *Choice*: Fetch `/r/<sub>/top/.rss?t=day` and each post's `/comments/<id>/.rss`. As of Oct 2026 Reddit returns `403 Blocked` for unauthenticated `.json` endpoints and redirects `old.reddit.com` to a login page (`302 reason=lor2`); RSS still works.
-   - *Trade-off*: No API credentials needed, but RSS exposes **no upvote scores or comment counts**, so every post/comment has `score=1` and ranking is effectively by mention count. RSS is also heavily rate limited (~1 request/60s logged out); the scraper reads `x-ratelimit-remaining`/`x-ratelimit-reset` and sleeps accordingly, so a 20-post run takes **~20 minutes**.
-   - *Upgrade path*: The official Reddit OAuth API (free "script" app) would restore scores and far higher rate limits.
+1. **Multi-Subreddit Reddit OAuth API Ingestion**:
+   - *Choice*: Authenticate with Reddit's official API using Application-Only Client Credentials OAuth (`https://oauth.reddit.com`) to scrape top/hot posts and top comments across `r/wallstreetbets`, `r/stocks`, and `r/ValueInvesting`.
+   - *Trade-off*: Requires developer registration (`REDDIT_CLIENT_ID` and `REDDIT_CLIENT_SECRET`), but provides genuine upvote scores, comment counts, upvote ratios, and up to 100 requests per minute (reducing scrape time from 20 minutes to under 10 seconds). Operates under a strict fail-fast posture with no unauthenticated fallback.
 2. **yfinance Stock Validation Filtering**:
    - *Choice*: Tickers found by regex must have both a valid `currentPrice` (or `regularMarketPrice`) and a non-empty `marketCap` on `yfinance`.
    - *Trade-off*: Guarantees that the pipeline only analyzes and persists reports for actual tradeable stocks (filtering out index ETFs, crypto, options jargon, and noise), but adds validation latency during initial extraction.
@@ -90,8 +89,12 @@ backend/
    ```
 3. Create a `.env` file in the `backend` directory with the following variables:
    ```ini
-   # Custom agent to prevent aggressive Reddit blocks
-   REDDIT_USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) HermesAgent/1.1 (Autonomous Research Project)"
+   # Reddit OAuth API Credentials (required)
+   REDDIT_CLIENT_ID="your_reddit_client_id"
+   REDDIT_CLIENT_SECRET="your_reddit_client_secret"
+   REDDIT_USER_AGENT="python:stock-picker:v1.0.0 (by /u/stock-picker-bot)"
+   # Optional: Subreddits to scrape (comma-separated, default: wallstreetbets,stocks,ValueInvesting)
+   REDDIT_SUBREDDITS="wallstreetbets,stocks,ValueInvesting"
    
    GEMINI_API_KEY=your_gemini_api_key
 

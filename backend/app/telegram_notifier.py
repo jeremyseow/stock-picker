@@ -3,6 +3,7 @@ import html
 import logging
 from datetime import datetime, timezone
 import httpx
+from app.reddit_scraper import get_target_subreddits
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +85,9 @@ def format_daily_digest(reports: list[dict], run_date: datetime | None = None) -
             lines.append(f"• Insight: <i>{insight}</i>")
         lines.append("")
 
-    lines.append("⚡ <i>Scraped from r/wallstreetbets • Powered by Gemini 2.5 Pro</i>")
+    subreddits = get_target_subreddits()
+    sub_str = ", ".join(f"r/{s}" for s in subreddits)
+    lines.append(f"⚡ <i>Scraped from {sub_str} • Powered by Gemini (gemini-4-argon)</i>")
     return "\n".join(lines).strip()
 
 

@@ -1,6 +1,6 @@
 # Antigravity StockPicker (Subreddit Stock Analyzer)
 
-An automated market intelligence system that extracts trending stock discussions from Reddit (`r/wallstreetbets`), validates tradeable securities via `yfinance`, gathers financial metrics, SEC filings, and latest news, and performs conservative AI-driven equity evaluations using Gemini. Persisted reports and multi-run historical analytics are served via a FastAPI backend and displayed through a responsive Next.js dashboard.
+An automated market intelligence system that extracts trending stock discussions from multiple subreddits (`r/wallstreetbets`, `r/stocks`, `r/ValueInvesting`) via official Reddit OAuth, validates tradeable securities via `yfinance`, gathers financial metrics, SEC filings, and latest news, and performs conservative AI-driven equity evaluations using Gemini. Persisted reports and multi-run historical analytics are served via a FastAPI backend and displayed through a responsive Next.js dashboard.
 
 ---
 
@@ -9,7 +9,7 @@ An automated market intelligence system that extracts trending stock discussions
 ```mermaid
 graph TD
     subgraph Data Ingestion
-        A[Reddit RSS Feeds<br/>r/wallstreetbets top & comments] --> C[Scraper & Ticker Extractor<br/>reddit_scraper.py + ticker_extractor.py]
+        A[Reddit OAuth API<br/>Multi-sub: WSB, stocks, ValueInvesting] --> C[Scraper & Ticker Extractor<br/>reddit_scraper.py + ticker_extractor.py]
         B1[yfinance API<br/>Metrics & SEC Filings] --> D[Market Researcher<br/>market_researcher.py]
         B2[yfinance Form 4<br/>Insider Transactions & 6m Net Flow] --> D
         B3[DuckDuckGo Search<br/>Corporate News & Congressional Trades] --> D
@@ -54,7 +54,7 @@ stock-picker/
 │   │   ├── market_researcher.py  # yfinance & DuckDuckGo metrics and news fetcher
 │   │   ├── models.py             # SQLAlchemy models (DailyTicker, TickerReport, TickerTrajectoryAnalysis)
 │   │   ├── pipeline.py           # Core ingestion, analysis, and persistence pipeline
-│   │   ├── reddit_scraper.py     # Atom/RSS feed parser with rate-limit handling
+│   │   ├── reddit_scraper.py     # Multi-subreddit Reddit OAuth API client (Client Credentials)
 │   │   ├── scheduler.py          # APScheduler cron job (19:00 SGT)
 │   │   ├── telegram_notifier.py  # Telegram Bot API client for consolidated daily digests
 │   │   └── ticker_extractor.py   # Regex extraction and engagement scoring
@@ -130,7 +130,13 @@ stock-picker/
    ```
 3. Configure `.env`:
    ```ini
-   REDDIT_USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) HermesAgent/1.1 (Autonomous Research Project)"
+   # Reddit OAuth API Credentials (required)
+   REDDIT_CLIENT_ID=your_reddit_client_id
+   REDDIT_CLIENT_SECRET=your_reddit_client_secret
+   REDDIT_USER_AGENT="python:stock-picker:v1.0.0 (by /u/stock-picker-bot)"
+   # Optional: Subreddits to scrape (comma-separated, default: wallstreetbets,stocks,ValueInvesting)
+   REDDIT_SUBREDDITS="wallstreetbets,stocks,ValueInvesting"
+
    GEMINI_API_KEY=your_gemini_api_key
 
    # Optional: Telegram Daily Digest Alerts (leave blank to disable)

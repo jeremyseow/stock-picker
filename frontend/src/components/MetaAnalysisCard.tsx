@@ -154,17 +154,10 @@ export default function MetaAnalysisCard({ ticker, reportCount }: MetaAnalysisCa
           Checking cached meta-analysis...
         </div>
       ) : !analysis ? (
-        <div className="py-6 text-center bg-slate-950/40 rounded-xl border border-slate-800/50 p-6">
-          <p className="text-xs text-slate-300 font-medium mb-3">
-            No trajectory analysis has been generated yet for ${ticker} across its {reportCount} historical runs.
+        <div className="py-8 text-center bg-slate-950/40 rounded-xl border border-slate-800/50 p-6">
+          <p className="text-xs text-slate-400 font-medium">
+            No trajectory analysis has been generated yet for <span className="text-slate-200 font-semibold">${ticker}</span> across its {reportCount} historical runs. Click <span className="text-indigo-400 font-semibold">&quot;Generate Meta-Analysis&quot;</span> above to synthesize longitudinal trends.
           </p>
-          <button
-            onClick={() => handleGenerate(false)}
-            disabled={generating}
-            className="px-5 py-2.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/20 transition-all cursor-pointer"
-          >
-            Generate AI Trajectory Meta-Analysis
-          </button>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

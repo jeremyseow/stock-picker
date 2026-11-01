@@ -1,38 +1,42 @@
 # reddit-scraper Specification
 
 ## Purpose
-TBD - created by archiving change subreddit-stock-analyzer. Update Purpose after archive.
-## Requirements
-### Requirement: Scrape Bounded Target Subreddit
-The system SHALL fetch strictly the top 20 posts and the top 50 comments per post from a specified subreddit over the last 24 hours, using Reddit's public Atom/RSS feeds.
+Ingests trending stock discussions from target subreddits using authenticated Reddit OAuth API scraping, extracting candidate ticker mentions with authentic engagement scores and context for downstream validation and intelligence analysis.
 
-> Note (Oct 2026): Reddit returns `403 Blocked` for unauthenticated `.json` endpoints and redirects `old.reddit.com` to a login page (`302 reason=lor2`). The previous JSON-first / `old.reddit.com` HTML fallback approach was removed for this reason.
+## Requirements
+
+### Requirement: Scrape Bounded Target Subreddit
+The system SHALL fetch the daily top posts and top comments across configured target subreddits (`r/wallstreetbets`, `r/stocks`, `r/ValueInvesting`) using Reddit's Application-Only OAuth API (`https://oauth.reddit.com`).
 
 #### Scenario: Scheduled Execution
-- **WHEN** the daily scheduled time is reached (19:00 Asia/Singapore)
-- **THEN** the scraper issues an HTTP GET (`httpx`, custom User-Agent) to `https://www.reddit.com/r/{subreddit}/top/.rss?t=day&limit=20`, parses the Atom entries (id, title, body, permalink), and then fetches each post's `{permalink}/.rss?sort=top&limit=50` for comments, skipping the first entry (the post itself).
+- **WHEN** the daily scheduled time is reached
+- **THEN** the scraper requests an OAuth access token using `REDDIT_CLIENT_ID` and `REDDIT_CLIENT_SECRET`, queries each configured target subreddit for top/hot posts over the last 24 hours, and fetches top comments for each thread.
+
+#### Scenario: Missing or Invalid Credentials
+- **WHEN** `REDDIT_CLIENT_ID` or `REDDIT_CLIENT_SECRET` is missing, invalid, or rejected during OAuth token generation
+- **THEN** the system SHALL immediately raise an authentication error and halt the pipeline, without attempting unauthenticated or RSS fallback.
 
 ### Requirement: Respect Reddit Rate Limits
-The system SHALL throttle feed requests using Reddit's `x-ratelimit-remaining` and `x-ratelimit-reset` response headers (logged-out quota is roughly 1 request per 60 seconds).
+The system SHALL respect Reddit OAuth API rate limits (100 requests per minute) by tracking rate limit headers (`x-ratelimit-remaining` and `x-ratelimit-reset`).
 
 #### Scenario: Quota Exhausted
-- **WHEN** a response reports `x-ratelimit-remaining` below 1
-- **THEN** the system sleeps for `x-ratelimit-reset + 1` seconds before the next request.
+- **WHEN** a response indicates `x-ratelimit-remaining` is below 1
+- **THEN** the scraper pauses execution for `x-ratelimit-reset + 1` seconds before issuing subsequent requests.
 
 #### Scenario: Rate Limited
-- **WHEN** a request returns `429 Too Many Requests`
-- **THEN** the system sleeps for `x-ratelimit-reset + 1` seconds and retries, up to 4 attempts, after which it logs an error and skips that feed (a failed top-posts feed aborts the run with no posts).
+- **WHEN** an OAuth API request receives an HTTP 429 response
+- **THEN** the scraper waits for the duration specified by `x-ratelimit-reset` and retries up to 3 times before failing the request.
 
 ### Requirement: Extract and Rank Stock Tickers
-The system SHALL parse the text to identify stock tickers and rank them using a weighted engagement heuristic (e.g., Mentions * Upvotes).
+The system SHALL parse the text across all scraped subreddits to identify stock tickers and rank them using authentic engagement weighting based on post upvotes, comment upvotes, and mention frequency.
 
 #### Scenario: Top Tickers Selection
-- **WHEN** extraction is complete
-- **THEN** the system isolates the top scoring tickers for the day.
+- **WHEN** extraction is complete across all scraped subreddits
+- **THEN** the system calculates each candidate ticker's engagement score as $(\text{Mentions in Post} \times \text{Post Score}) + (\text{Mentions in Comment} \times \text{Comment Score})$ using real Reddit upvote data and isolates the top-scoring tickers for downstream analysis.
 
 #### Scenario: Scores Unavailable
-- **WHEN** posts and comments are sourced from RSS feeds (which expose no upvote scores or comment counts)
-- **THEN** each post and comment is assigned a score of 1, so ranking is effectively by mention count.
+- **WHEN** posts and comments are sourced from Reddit's OAuth API
+- **THEN** genuine upvote scores are present on all returned posts and comments, and scores are never artificially hardcoded to 1.
 
 ### Requirement: Bundle Ticker Context
 The system SHALL aggregate the specific posts and comments that mentioned each of the top tickers to provide exact context to the LLM.
@@ -40,4 +44,3 @@ The system SHALL aggregate the specific posts and comments that mentioned each o
 #### Scenario: Context Bundling
 - **WHEN** the top tickers are identified
 - **THEN** the system creates a textual payload for each ticker containing only the Reddit text relevant to that ticker.
-

@@ -1,7 +1,7 @@
 # dashboard-frontend Specification
 
 ## Purpose
-TBD - created by archiving change subreddit-stock-analyzer. Update Purpose after archive.
+Provides a responsive Next.js web application for browsing daily trending stock picks, exploring detailed four-pillar equity research reports, viewing historical run archives, and inspecting longitudinal ticker trajectories alongside Smart Money insider trading radars.
 
 ## Requirements
 
