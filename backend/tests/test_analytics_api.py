@@ -173,6 +173,13 @@ def test_ticker_extractor_alias():
     assert "GOOG" in extracted
     assert "NVDA" in extracted
 
+    # Roman numerals, slang and noise words should be excluded
+    noise_extracted = extract_tickers_from_text("Phase III trials for WW III or Part II NFA DYOR")
+    assert "III" not in noise_extracted
+    assert "II" not in noise_extracted
+    assert "NFA" not in noise_extracted
+    assert "DYOR" not in noise_extracted
+
 @pytest.mark.asyncio
 async def test_ticker_meta_analysis_endpoints(test_db):
     transport = ASGITransport(app=app)

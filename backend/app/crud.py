@@ -249,20 +249,33 @@ async def save_synthesis_records(db: AsyncSession, records: list[dict]) -> list[
 
 
 async def get_latest_synthesis_records(db: AsyncSession) -> list[SynthesisRecord]:
-    """Retrieve the latest synthesis matrix records."""
+    """Retrieve the latest synthesis matrix records, deduplicated by ticker."""
     latest_ts_query = select(func.max(SynthesisRecord.date))
     latest_ts_res = await db.execute(latest_ts_query)
     latest_ts = latest_ts_res.scalar_one_or_none()
     if not latest_ts:
         return []
 
+    # Fetch recent records within 15 seconds of the latest timestamp
     query = (
         select(SynthesisRecord)
-        .where(SynthesisRecord.date >= latest_ts - timedelta(minutes=2))
-        .order_by(SynthesisRecord.timing_edge_score.desc())
+        .where(SynthesisRecord.date >= latest_ts - timedelta(seconds=15))
+        .order_by(SynthesisRecord.date.desc(), SynthesisRecord.timing_edge_score.desc())
     )
     result = await db.execute(query)
-    return list(result.scalars().all())
+    records = list(result.scalars().all())
+
+    # Ensure each ticker appears at most once (keeping newest / highest edge)
+    seen_tickers = set()
+    deduped = []
+    for r in records:
+        sym = r.ticker.upper()
+        if sym not in seen_tickers:
+            seen_tickers.add(sym)
+            deduped.append(r)
+
+    deduped.sort(key=lambda x: x.timing_edge_score, reverse=True)
+    return deduped
 
 
 async def get_synthesis_record_by_ticker(db: AsyncSession, ticker: str) -> SynthesisRecord | None:

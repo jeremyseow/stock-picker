@@ -150,3 +150,36 @@ async def test_synthesis_archetype_classification():
     assert lmt_res["recommended_action"] == "EARLY SWING BUY"
     assert lmt_res["retail_awareness_level"] == "Zero Awareness (Stealth)"
     assert lmt_res["timing_edge_score"] == 95.0
+
+
+@pytest.mark.asyncio
+async def test_get_latest_synthesis_records_deduplication():
+    from app.crud import get_latest_synthesis_records
+    from app.models import SynthesisRecord
+    from datetime import datetime, timezone, timedelta
+    
+    now = datetime.now(timezone.utc)
+    mock_db = AsyncMock()
+    
+    # Simulate multiple runs within window having duplicate tickers
+    rec1 = SynthesisRecord(id=1, ticker="AAPL", date=now, timing_edge_score=95.0, archetype="The Rocket")
+    rec2 = SynthesisRecord(id=2, ticker="AAPL", date=now - timedelta(seconds=2), timing_edge_score=90.0, archetype="The Rocket")
+    rec3 = SynthesisRecord(id=3, ticker="MSFT", date=now, timing_edge_score=80.0, archetype="Silent Accumulation")
+    
+    async def mock_exec(query):
+        mock_res = MagicMock()
+        q_str = str(query).lower()
+        if "max(synthesis_records.date)" in q_str:
+            mock_res.scalar_one_or_none.return_value = now
+        elif "from synthesis_records" in q_str:
+            mock_res.scalars().all.return_value = [rec1, rec2, rec3]
+        return mock_res
+
+    mock_db.execute.side_effect = mock_exec
+
+    results = await get_latest_synthesis_records(mock_db)
+    assert len(results) == 2
+    tickers = [r.ticker for r in results]
+    assert "AAPL" in tickers
+    assert "MSFT" in tickers
+    assert len(set(tickers)) == 2

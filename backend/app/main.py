@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import desc, func
 
-from app.database import init_db, get_db
+from app.database import init_db, get_db, AsyncSessionLocal
 from app.models import DailyTicker, TickerReport
 from app.scheduler import setup_scheduler
 from app.crud import (
@@ -23,6 +23,7 @@ from app.crud import (
 from app.pipeline import run_analysis_pipeline
 from app.smart_money_pipeline import run_smart_money_pipeline
 from app.smart_money_researcher import get_historical_trade_price
+from app.synthesis_engine import generate_cross_engine_synthesis
 from app.agent import generate_trajectory_analysis
 from app.ticker_extractor import TICKER_ALIASES
 from datetime import timedelta
@@ -455,6 +456,11 @@ async def trigger_retail_pipeline():
     """Triggers an on-demand execution of Engine 1 (Retail Momentum) and refreshes Cross-Engine Synthesis."""
     logger.info("Manual trigger received for Engine 1 (Retail Momentum)...")
     await run_analysis_pipeline()
+    try:
+        async with AsyncSessionLocal() as db:
+            await generate_cross_engine_synthesis(db)
+    except Exception as e:
+        logger.warning(f"Could not refresh cross-engine synthesis after Engine 1: {e}")
     return {"status": "success"}
 
 
@@ -463,6 +469,11 @@ async def trigger_smart_money_run():
     """Triggers an on-demand execution of Engine 2 and refreshes Cross-Engine Synthesis."""
     logger.info("Manual trigger received for Engine 2 (Smart Money Scout)...")
     reports = await run_smart_money_pipeline(limit=5)
+    try:
+        async with AsyncSessionLocal() as db:
+            await generate_cross_engine_synthesis(db)
+    except Exception as e:
+        logger.warning(f"Could not refresh cross-engine synthesis after Engine 2: {e}")
     return {
         "status": "success",
         "smart_money_reports_count": len(reports),

@@ -13,6 +13,8 @@ BLACKLIST = {
     "AI", "PE", "PC", "EV", "CC", "ITM", "OTM", "ATM", "IV", "DCA", "NAV", "TA", "FA", "RH",
     "CPU", "GPU", "RAM", "SSD", "HDD", "OS", "UI", "UX", "API", "SDK", "IP", "TV", "VR", "AR",
     "OP", "CNBC", "WSJ", "FT", "DTE", "PCE", "FOMC", "PT", "ER", "PR",
+    "II", "III", "VI", "VII", "VIII", "IX", "XI", "XII",
+    "NFA", "DYOR", "IMHO", "EOD", "EST", "PST", "UTC", "GMT", "LOL", "LMAO", "IDK", "FYI", "AKA", "DIY", "FAQ", "RIP",
     "SPY", "QQQ", "IWM", "DIA", "VOO", "VTI"
 }
 

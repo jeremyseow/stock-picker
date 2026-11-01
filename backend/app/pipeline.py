@@ -17,7 +17,6 @@ from app.market_researcher import (
 from app.agent import generate_stock_report
 from app.crud import save_daily_tickers, save_ticker_report
 from app.telegram_notifier import send_daily_digest
-from app.synthesis_engine import generate_cross_engine_synthesis
 
 logger = logging.getLogger(__name__)
 _pipeline_lock = asyncio.Lock()
@@ -122,12 +121,5 @@ async def run_analysis_pipeline():
                 
         logger.info("Step 6: Sending Telegram daily digest...")
         await send_daily_digest(processed_summaries)
-
-        logger.info("Step 7: Refreshing Cross-Engine Synthesis Matrix...")
-        try:
-            async with AsyncSessionLocal() as db:
-                await generate_cross_engine_synthesis(db)
-        except Exception as e:
-            logger.warning(f"Could not refresh cross-engine synthesis after Engine 1: {e}")
 
         logger.info("Pipeline completed successfully!")

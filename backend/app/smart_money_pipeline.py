@@ -5,7 +5,6 @@ from app.smart_money_ingestor import ingest_all_smart_money
 from app.smart_money_scorer import rank_smart_money_candidates
 from app.smart_money_researcher import research_smart_money_candidate
 from app.crud import save_smart_money_tickers, save_smart_money_report
-from app.synthesis_engine import generate_cross_engine_synthesis
 
 logger = logging.getLogger(__name__)
 _smart_money_lock = asyncio.Lock()
@@ -50,14 +49,6 @@ async def run_smart_money_pipeline(limit: int = 5) -> list[dict]:
                 report_data = await research_smart_money_candidate(c)
                 await save_smart_money_report(db, report_data)
                 reports.append(report_data)
-
-        # Step 5: Refresh Cross-Engine Synthesis
-        logger.info("Step 5: Refreshing Cross-Engine Synthesis Matrix...")
-        try:
-            async with AsyncSessionLocal() as db:
-                await generate_cross_engine_synthesis(db)
-        except Exception as e:
-            logger.warning(f"Could not refresh cross-engine synthesis after Engine 2: {e}")
 
         logger.info(f"Engine 2 completed successfully: {len(reports)} reports generated.")
         return reports
