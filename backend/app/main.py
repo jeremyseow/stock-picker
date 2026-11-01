@@ -7,7 +7,7 @@ from sqlalchemy.future import select
 from sqlalchemy import desc, func
 
 from app.database import init_db, get_db, AsyncSessionLocal
-from app.models import DailyTicker, TickerReport
+from app.models import DailyTicker, RetailReport
 from app.scheduler import setup_scheduler
 from app.crud import (
     get_distinct_report_dates,
@@ -18,7 +18,13 @@ from app.crud import (
     save_trajectory_analysis,
     get_latest_smart_money_tickers,
     get_latest_smart_money_report,
+    get_smart_money_reports_by_date,
     get_latest_synthesis_records,
+    get_synthesis_records_by_date,
+    get_synthesis_record_by_ticker,
+    get_ticker_archetype_history,
+    get_latest_core_equity_intel,
+    get_latest_retail_report,
 )
 from app.pipeline import run_analysis_pipeline
 from app.smart_money_pipeline import run_smart_money_pipeline
@@ -65,7 +71,7 @@ app.add_middleware(
 async def health_check():
     return {"status": "ok"}
 
-@app.get("/api/tickers/today")
+@app.get("/api/retail/today")
 async def get_todays_tickers(db: AsyncSession = Depends(get_db)):
     """Get the top tickers from the most recent pipeline run, along with key details from the latest report."""
     # Use the latest run rather than "today in UTC": UTC midnight is 08:00 SGT, which left the
@@ -82,7 +88,7 @@ async def get_todays_tickers(db: AsyncSession = Depends(get_db)):
     combined = []
     for t in tickers:
         # Fetch the latest report for this ticker
-        report_query = select(TickerReport).where(TickerReport.ticker == t.ticker).order_by(desc(TickerReport.date)).limit(1)
+        report_query = select(RetailReport).where(RetailReport.ticker == t.ticker).order_by(desc(RetailReport.date)).limit(1)
         report_res = await db.execute(report_query)
         report = report_res.scalar_one_or_none()
         
@@ -104,13 +110,13 @@ async def get_todays_tickers(db: AsyncSession = Depends(get_db)):
     return combined
 
 
-@app.get("/api/reports/dates")
+@app.get("/api/dates")
 async def get_report_dates(db: AsyncSession = Depends(get_db)):
     """Get all unique dates on which analysis reports were generated."""
     return await get_distinct_report_dates(db)
 
 
-@app.get("/api/reports")
+@app.get("/api/retail/reports")
 async def get_reports_by_query(
     date: str | None = Query(None, description="Report date in YYYY-MM-DD format"),
     db: AsyncSession = Depends(get_db)
@@ -146,24 +152,152 @@ async def get_reports_by_query(
     return formatted
 
 
-@app.get("/api/reports/{ticker}")
-async def get_ticker_report(ticker: str, db: AsyncSession = Depends(get_db)):
-    """Get the latest report for a specific ticker."""
-    ticker = TICKER_ALIASES.get(ticker.upper(), ticker.upper())
-    query = select(TickerReport).where(TickerReport.ticker == ticker).order_by(desc(TickerReport.date)).limit(1)
-    result = await db.execute(query)
-    report = result.scalar_one_or_none()
-    
-    if not report:
-        raise HTTPException(status_code=404, detail="Report not found")
-        
-    return report
+@app.get("/api/retail/report/{ticker}")
+async def get_retail_report_detail(ticker: str, db: AsyncSession = Depends(get_db)):
+    """Get detailed retail momentum report for a ticker, including linked core equity intel."""
+    ticker_sym = TICKER_ALIASES.get(ticker.upper(), ticker.upper())
+    retail_rep = await get_latest_retail_report(db, ticker_sym)
+    if not retail_rep:
+        raise HTTPException(status_code=404, detail=f"No retail report found for ${ticker_sym}")
+    core_intel = await get_latest_core_equity_intel(db, ticker_sym)
 
-@app.get("/api/reports/{ticker}/text", response_class=PlainTextResponse)
+    return {
+        "id": retail_rep.id,
+        "ticker": retail_rep.ticker,
+        "date": retail_rep.date.isoformat(),
+        "rank": retail_rep.rank,
+        "current_price": retail_rep.current_price,
+        "target_price": retail_rep.target_price,
+        "recommendation": retail_rep.recommendation,
+        "recommendation_rationale": retail_rep.recommendation_rationale,
+        "community_sentiment": retail_rep.community_sentiment,
+        "community_hype": retail_rep.community_hype,
+        "ground_truth_status": retail_rep.ground_truth_status,
+        "ground_truth_filings_news": retail_rep.ground_truth_filings_news,
+        "events_happenings": retail_rep.events_happenings,
+        "reconciliation_risk_score": retail_rep.reconciliation_risk_score,
+        "reconciliation_analysis": retail_rep.reconciliation_analysis,
+        "reconciliation_actionable_insight": retail_rep.reconciliation_actionable_insight,
+        "raw_metrics": retail_rep.raw_metrics,
+        "raw_news": retail_rep.raw_news,
+        "raw_insider_data": retail_rep.raw_insider_data,
+        "core_intel": {
+            "has_data": core_intel is not None,
+            "company_name": core_intel.company_name if core_intel else retail_rep.ticker,
+            "sector": core_intel.sector if core_intel else "General",
+            "industry": core_intel.industry if core_intel else "General",
+            "raw_metrics": core_intel.raw_metrics if core_intel else retail_rep.raw_metrics,
+        }
+    }
+
+
+@app.get("/api/master/report/{ticker}")
+async def get_ticker_report(ticker: str, db: AsyncSession = Depends(get_db)):
+    """Get the unified master report for a specific ticker across all engines."""
+    ticker_sym = TICKER_ALIASES.get(ticker.upper(), ticker.upper())
+    core_intel = await get_latest_core_equity_intel(db, ticker_sym)
+    retail_rep = await get_latest_retail_report(db, ticker_sym)
+    smart_money_rep = await get_latest_smart_money_report(db, ticker_sym)
+    synthesis_rec = await get_synthesis_record_by_ticker(db, ticker_sym)
+
+    if not core_intel and not retail_rep and not smart_money_rep:
+        raise HTTPException(status_code=404, detail=f"Report for ${ticker_sym} not found")
+
+    company_name = (core_intel and core_intel.company_name) or (smart_money_rep and smart_money_rep.company_name) or ticker_sym
+    sector = (core_intel and core_intel.sector) or (smart_money_rep and smart_money_rep.sector) or "General"
+    industry = (core_intel and core_intel.industry) or (smart_money_rep and smart_money_rep.industry) or "General"
+    current_price = (core_intel and core_intel.current_price) or (retail_rep and retail_rep.current_price) or (smart_money_rep and smart_money_rep.current_price)
+    target_price = (core_intel and core_intel.target_price) or (retail_rep and retail_rep.target_price) or (smart_money_rep and smart_money_rep.target_price)
+    raw_metrics = (core_intel and core_intel.raw_metrics) or (retail_rep and retail_rep.raw_metrics) or (smart_money_rep and smart_money_rep.raw_metrics) or {}
+
+    inflow_ledger = []
+    if smart_money_rep and smart_money_rep.inflow_ledger:
+        for item in smart_money_rep.inflow_ledger:
+            entry = dict(item)
+            if not entry.get("price") or entry.get("price") == "N/A":
+                t_date = entry.get("date")
+                p = get_historical_trade_price(ticker_sym, t_date) if t_date else None
+                if p:
+                    entry["price"] = f"${p:.2f}"
+                elif current_price:
+                    entry["price"] = f"~${current_price:.2f}"
+                else:
+                    entry["price"] = "Market"
+            inflow_ledger.append(entry)
+
+    # Calculate potential upside
+    potential_upside = None
+    if current_price and target_price and current_price > 0:
+        potential_upside = ((target_price - current_price) / current_price) * 100
+
+    report_date = (core_intel and core_intel.date) or (retail_rep and retail_rep.date) or (smart_money_rep and smart_money_rep.date)
+
+    return {
+        "id": (retail_rep and retail_rep.id) or (smart_money_rep and smart_money_rep.id) or (core_intel and core_intel.id),
+        "ticker": ticker_sym,
+        "company_name": company_name,
+        "sector": sector,
+        "industry": industry,
+        "current_price": current_price,
+        "target_price": target_price,
+        "potential_upside": potential_upside,
+        "date": report_date.isoformat() if report_date else None,
+
+        # Top-level backward compatibility fields
+        "ground_truth_status": (core_intel and core_intel.ground_truth_status) or (retail_rep and retail_rep.ground_truth_status) or (smart_money_rep and smart_money_rep.ground_truth_status),
+        "ground_truth_filings_news": (core_intel and core_intel.ground_truth_filings_news) or (retail_rep and retail_rep.ground_truth_filings_news) or (smart_money_rep and smart_money_rep.ground_truth_filings_news),
+        "events_happenings": (core_intel and core_intel.events_happenings) or (retail_rep and retail_rep.events_happenings) or (smart_money_rep and smart_money_rep.events_happenings),
+        "reconciliation_risk_score": (core_intel and core_intel.risk_score) or (retail_rep and retail_rep.reconciliation_risk_score) or (smart_money_rep and smart_money_rep.risk_score) or "Medium",
+        "reconciliation_analysis": (core_intel and core_intel.risk_analysis) or (retail_rep and retail_rep.reconciliation_analysis),
+        "reconciliation_actionable_insight": (core_intel and core_intel.actionable_insight) or (retail_rep and retail_rep.reconciliation_actionable_insight) or (smart_money_rep and smart_money_rep.actionable_thesis),
+        "recommendation": retail_rep.recommendation if retail_rep else "HOLD",
+        "recommendation_rationale": retail_rep.recommendation_rationale if retail_rep else "Report generated from institutional and fundamental scan.",
+        "community_sentiment": retail_rep.community_sentiment if retail_rep else "Unmonitored",
+        "community_hype": retail_rep.community_hype if retail_rep else "No active Reddit discussion tracked.",
+        "smart_money_verdict": (retail_rep and retail_rep.smart_money_verdict) or (synthesis_rec and synthesis_rec.smart_money_flow) or (smart_money_rep and smart_money_rep.conviction_tier) or "Neutral",
+        "raw_insider_data": (retail_rep and retail_rep.raw_insider_data) or {"has_data": bool(smart_money_rep), "insider_activity_summary": smart_money_rep.actionable_thesis if smart_money_rep else None, "congressional_trades": []},
+        "raw_metrics": raw_metrics,
+        "raw_news": (core_intel and core_intel.raw_news) or (retail_rep and retail_rep.raw_news) or [],
+
+        # Modular Overlay Facets
+        "retail_overlay": {
+            "has_data": retail_rep is not None,
+            "rank": retail_rep.rank if retail_rep else None,
+            "mention_count": retail_rep.mention_count if retail_rep else 0,
+            "community_sentiment": retail_rep.community_sentiment if retail_rep else "Unmonitored",
+            "community_hype": retail_rep.community_hype if retail_rep else "No active Reddit discussion tracked.",
+            "recommendation": retail_rep.recommendation if retail_rep else None,
+            "recommendation_rationale": retail_rep.recommendation_rationale if retail_rep else None,
+        },
+        "smart_money_overlay": {
+            "has_data": smart_money_rep is not None,
+            "rank": smart_money_rep.rank if smart_money_rep else None,
+            "conviction_score": smart_money_rep.conviction_score if smart_money_rep else 0.0,
+            "conviction_tier": smart_money_rep.conviction_tier if smart_money_rep else "No Cluster",
+            "cluster_count": smart_money_rep.cluster_count if smart_money_rep else 0,
+            "total_buy_volume": smart_money_rep.total_buy_volume if smart_money_rep else 0.0,
+            "top_buyer_summary": smart_money_rep.top_buyer_summary if smart_money_rep else None,
+            "inflow_ledger": inflow_ledger,
+            "political_catalyst_analysis": smart_money_rep.political_catalyst_analysis if smart_money_rep else None,
+            "corporate_catalyst_analysis": smart_money_rep.corporate_catalyst_analysis if smart_money_rep else None,
+            "catalyst_horizon": smart_money_rep.catalyst_horizon if smart_money_rep else None,
+            "actionable_thesis": smart_money_rep.actionable_thesis if smart_money_rep else None,
+        },
+        "synthesis": {
+            "has_data": synthesis_rec is not None,
+            "archetype": synthesis_rec.archetype if synthesis_rec else "Market Noise",
+            "retail_awareness_level": synthesis_rec.retail_awareness_level if synthesis_rec else "Zero Awareness (Stealth)",
+            "timing_edge_score": synthesis_rec.timing_edge_score if synthesis_rec else 0.0,
+            "synthesis_diagnosis": synthesis_rec.synthesis_diagnosis if synthesis_rec else None,
+            "recommended_action": synthesis_rec.recommended_action if synthesis_rec else "PASS",
+        }
+    }
+
+@app.get("/api/master/report/{ticker}/text", response_class=PlainTextResponse)
 async def get_ticker_report_text(ticker: str, db: AsyncSession = Depends(get_db)):
     """Get the latest report for a specific ticker formatted as plain text."""
     ticker = TICKER_ALIASES.get(ticker.upper(), ticker.upper())
-    query = select(TickerReport).where(TickerReport.ticker == ticker).order_by(desc(TickerReport.date)).limit(1)
+    query = select(RetailReport).where(RetailReport.ticker == ticker).order_by(desc(RetailReport.date)).limit(1)
     result = await db.execute(query)
     report = result.scalar_one_or_none()
     
@@ -230,6 +364,27 @@ async def get_ticker_analytics(ticker: str, db: AsyncSession = Depends(get_db)):
             "raw_metrics": r.raw_metrics
         })
     return results
+
+
+@app.get("/api/analytics/ticker/{ticker}/archetypes")
+async def get_ticker_archetype_progression(ticker: str, db: AsyncSession = Depends(get_db)):
+    """Get chronological synthesis archetype lifecycle progression for a ticker."""
+    ticker_sym = TICKER_ALIASES.get(ticker.upper(), ticker.upper())
+    history = await get_ticker_archetype_history(db, ticker_sym)
+    return [
+        {
+            "id": r.id,
+            "date": r.date.isoformat(),
+            "archetype": r.archetype,
+            "timing_edge_score": r.timing_edge_score,
+            "retail_awareness_level": r.retail_awareness_level,
+            "retail_mentions": r.retail_mentions,
+            "smart_money_conviction": r.smart_money_conviction,
+            "synthesis_diagnosis": r.synthesis_diagnosis,
+            "recommended_action": r.recommended_action,
+        }
+        for r in history
+    ]
 
 
 @app.get("/api/analytics/ticker/{ticker}/meta-analysis")
@@ -354,6 +509,47 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
 # Engine 2: Smart Money & Political Endpoints
 # ==========================================
 
+@app.get("/api/smart-money/reports")
+async def get_smart_money_reports_by_query(
+    date: str | None = Query(None, description="Report date in YYYY-MM-DD format"),
+    db: AsyncSession = Depends(get_db)
+):
+    """Fetch Smart Money reports for a specific date, or latest available date if omitted."""
+    if not date:
+        available_dates = await get_distinct_report_dates(db)
+        if not available_dates:
+            return []
+        date = available_dates[0]
+
+    reports = await get_smart_money_reports_by_date(db, date)
+    results = []
+    for rep in reports:
+        results.append({
+            "id": rep.id,
+            "ticker": rep.ticker,
+            "date": rep.date.isoformat(),
+            "rank": rep.rank,
+            "company_name": rep.company_name,
+            "sector": rep.sector,
+            "industry": rep.industry,
+            "current_price": rep.current_price,
+            "target_price": rep.target_price,
+            "conviction_score": rep.conviction_score,
+            "conviction_tier": rep.conviction_tier,
+            "cluster_count": rep.cluster_count,
+            "total_buy_volume": rep.total_buy_volume,
+            "top_buyer_summary": rep.top_buyer_summary,
+            "catalyst_horizon": rep.catalyst_horizon,
+            "actionable_thesis": rep.actionable_thesis,
+            "political_catalyst_analysis": rep.political_catalyst_analysis,
+            "corporate_catalyst_analysis": rep.corporate_catalyst_analysis,
+            "ground_truth_status": rep.ground_truth_status,
+            "risk_score": rep.risk_score,
+            "raw_metrics": rep.raw_metrics,
+        })
+    return results
+
+
 @app.get("/api/smart-money/today")
 async def get_today_smart_money(db: AsyncSession = Depends(get_db)):
     """Fetch the latest Smart Money & Political Scout candidate tickers."""
@@ -383,11 +579,14 @@ async def get_today_smart_money(db: AsyncSession = Depends(get_db)):
 
 @app.get("/api/smart-money/report/{ticker}")
 async def get_smart_money_report_detail(ticker: str, db: AsyncSession = Depends(get_db)):
-    """Fetch detailed smart money catalyst report and inflow ledger."""
-    rep = await get_latest_smart_money_report(db, ticker.upper())
+    """Fetch detailed smart money catalyst report, inflow ledger, and linked core equity intelligence."""
+    ticker_sym = TICKER_ALIASES.get(ticker.upper(), ticker.upper())
+    rep = await get_latest_smart_money_report(db, ticker_sym)
     if not rep:
-        raise HTTPException(status_code=404, detail=f"No smart money report found for ${ticker.upper()}")
+        raise HTTPException(status_code=404, detail=f"No smart money report found for ${ticker_sym}")
     
+    core_intel = await get_latest_core_equity_intel(db, ticker_sym)
+
     inflow_ledger = []
     for item in (rep.inflow_ledger or []):
         entry = dict(item)
@@ -402,15 +601,24 @@ async def get_smart_money_report_detail(ticker: str, db: AsyncSession = Depends(
                 entry["price"] = "Market"
         inflow_ledger.append(entry)
 
+    company_name = (core_intel and core_intel.company_name) or rep.company_name
+    sector = (core_intel and core_intel.sector) or rep.sector
+    industry = (core_intel and core_intel.industry) or rep.industry
+    current_price = (core_intel and core_intel.current_price) or rep.current_price
+    target_price = (core_intel and core_intel.target_price) or rep.target_price
+    raw_metrics = (core_intel and core_intel.raw_metrics) or rep.raw_metrics or {}
+    ground_truth_status = (core_intel and core_intel.ground_truth_status) or rep.ground_truth_status or "Verified"
+    risk_score = (core_intel and core_intel.risk_score) or rep.risk_score or "Medium"
+
     return {
         "id": rep.id,
         "ticker": rep.ticker,
         "date": rep.date.isoformat(),
-        "company_name": rep.company_name,
-        "sector": rep.sector,
-        "industry": rep.industry,
-        "current_price": rep.current_price,
-        "target_price": rep.target_price,
+        "company_name": company_name,
+        "sector": sector,
+        "industry": industry,
+        "current_price": current_price,
+        "target_price": target_price,
         "conviction_score": rep.conviction_score,
         "conviction_tier": rep.conviction_tier,
         "inflow_ledger": inflow_ledger,
@@ -418,13 +626,65 @@ async def get_smart_money_report_detail(ticker: str, db: AsyncSession = Depends(
         "corporate_catalyst_analysis": rep.corporate_catalyst_analysis,
         "catalyst_horizon": rep.catalyst_horizon,
         "actionable_thesis": rep.actionable_thesis,
-        "raw_metrics": rep.raw_metrics,
+        "ground_truth_status": ground_truth_status,
+        "risk_score": risk_score,
+        "raw_metrics": raw_metrics,
+        "core_intel": {
+            "has_data": core_intel is not None,
+            "company_name": company_name,
+            "sector": sector,
+            "industry": industry,
+            "current_price": current_price,
+            "target_price": target_price,
+            "ground_truth_status": ground_truth_status,
+            "ground_truth_filings_news": (core_intel and core_intel.ground_truth_filings_news) or "SEC disclosures and corporate fundamentals verified.",
+            "events_happenings": (core_intel and core_intel.events_happenings) or "Corporate filings, insider disclosures, and committee actions tracked.",
+            "risk_score": risk_score,
+            "risk_analysis": (core_intel and core_intel.risk_analysis) or "Fundamental risk evaluated through verified financial health and governance metrics.",
+            "actionable_insight": (core_intel and core_intel.actionable_insight) or rep.actionable_thesis,
+            "raw_metrics": raw_metrics,
+            "raw_news": (core_intel and core_intel.raw_news) or [],
+        }
     }
 
 
 # ==========================================
 # Cross-Engine Synthesis Endpoints
 # ==========================================
+
+@app.get("/api/synthesis/reports")
+async def get_synthesis_reports_by_query(
+    date: str | None = Query(None, description="Report date in YYYY-MM-DD format"),
+    db: AsyncSession = Depends(get_db)
+):
+    """Fetch Synthesis Matrix records for a specific date, or latest available date if omitted."""
+    if not date:
+        available_dates = await get_distinct_report_dates(db)
+        if not available_dates:
+            return []
+        date = available_dates[0]
+
+    records = await get_synthesis_records_by_date(db, date)
+    return [
+        {
+            "id": r.id,
+            "ticker": r.ticker,
+            "date": r.date.isoformat(),
+            "archetype": r.archetype,
+            "retail_rank": r.retail_rank,
+            "retail_mentions": r.retail_mentions,
+            "retail_sentiment": r.retail_sentiment,
+            "smart_money_rank": r.smart_money_rank,
+            "smart_money_conviction": r.smart_money_conviction,
+            "smart_money_flow": r.smart_money_flow,
+            "retail_awareness_level": r.retail_awareness_level,
+            "timing_edge_score": r.timing_edge_score,
+            "synthesis_diagnosis": r.synthesis_diagnosis,
+            "recommended_action": r.recommended_action,
+        }
+        for r in records
+    ]
+
 
 @app.get("/api/synthesis/today")
 async def get_today_synthesis(db: AsyncSession = Depends(get_db)):
@@ -451,7 +711,7 @@ async def get_today_synthesis(db: AsyncSession = Depends(get_db)):
     ]
 
 
-@app.post("/api/pipeline/trigger")
+@app.post("/api/retail/trigger")
 async def trigger_retail_pipeline():
     """Triggers an on-demand execution of Engine 1 (Retail Momentum) and refreshes Cross-Engine Synthesis."""
     logger.info("Manual trigger received for Engine 1 (Retail Momentum)...")

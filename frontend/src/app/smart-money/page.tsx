@@ -206,7 +206,7 @@ export default function SmartMoneyPage() {
                 </div>
 
                 <div className="mt-6 pt-4 border-t border-slate-800/40 flex items-center justify-between text-xs font-bold text-indigo-400 group-hover:text-indigo-300">
-                  <span>View Catalyst Report</span>
+                  <span>View Smart Money Catalyst Report</span>
                   <span>&rarr;</span>
                 </div>
               </div>

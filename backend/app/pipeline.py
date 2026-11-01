@@ -15,6 +15,7 @@ from app.market_researcher import (
     is_valid_ticker,
 )
 from app.agent import generate_stock_report
+from app.core_intel_engine import research_core_equity_intel
 from app.crud import save_daily_tickers, save_ticker_report
 from app.telegram_notifier import send_daily_digest
 
@@ -58,15 +59,15 @@ async def run_analysis_pipeline():
         async with AsyncSessionLocal() as db:
             await save_daily_tickers(db, top_tickers)
             
-            for item in top_tickers:
+            for idx, item in enumerate(top_tickers):
                 ticker = item["ticker"]
-                logger.info(f"Step 3: Researching {ticker}...")
+                logger.info(f"Step 3: Conducting Core Intel research for {ticker}...")
+                core_intel = await research_core_equity_intel(ticker, db=db)
                 
-                metrics = fetch_financial_metrics(ticker)
-                news = fetch_recent_news(ticker)
+                metrics = core_intel.get("raw_metrics") or fetch_financial_metrics(ticker)
+                news = core_intel.get("raw_news") or fetch_recent_news(ticker)
+                filings = core_intel.get("raw_filings") or fetch_sec_filings(ticker)
                 
-                # Fetch SEC filings
-                filings = fetch_sec_filings(ticker)
                 if filings:
                     sec_filings_text = "\n".join([
                         f"- {f['date']} ({f['type']}): {f['title']} (URL: {f['edgarUrl']})"
@@ -75,7 +76,6 @@ async def run_analysis_pipeline():
                 else:
                     sec_filings_text = "No recent SEC filings found."
                     
-                # Fetch Web Search news
                 search_hits = fetch_web_search_news(ticker)
                 if search_hits:
                     web_search_text = "\n".join([
@@ -89,7 +89,7 @@ async def run_analysis_pipeline():
                 insider_data = fetch_insider_data(ticker)
                 congressional_trades = fetch_congressional_trades(ticker)
 
-                logger.info(f"Step 4: Generating Report for {ticker}...")
+                logger.info(f"Step 4: Generating Retail Overlay for {ticker}...")
                 report = await generate_stock_report(
                     ticker,
                     metrics,
@@ -101,16 +101,26 @@ async def run_analysis_pipeline():
                     congressional_trades=congressional_trades
                 )
                 
-                logger.info(f"Step 5: Saving {ticker} report ({report.recommendation})...")
-                # Enrich insider payload with congressional disclosures and AI synthesis
+                logger.info(f"Step 5: Saving {ticker} retail report ({report.recommendation})...")
                 enriched_insider_data = dict(insider_data) if insider_data else {"has_data": False}
                 enriched_insider_data["congressional_trades"] = congressional_trades or []
                 enriched_insider_data["insider_activity_summary"] = report.insider_activity_summary
 
-                await save_ticker_report(db, ticker, report, metrics, news, insider_data=enriched_insider_data)
+                await save_ticker_report(
+                    db,
+                    ticker,
+                    report,
+                    metrics,
+                    news,
+                    insider_data=enriched_insider_data,
+                    core_intel_id=core_intel.get("id"),
+                    rank=idx + 1,
+                    mention_count=item.get("mention_count", 0),
+                    engagement_score=item.get("engagement_score", 0.0)
+                )
 
                 processed_summaries.append({
-                    "rank": item.get("rank", len(processed_summaries) + 1),
+                    "rank": idx + 1,
                     "ticker": ticker,
                     "recommendation": report.recommendation,
                     "current_price": metrics.get("current_price"),

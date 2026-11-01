@@ -1,6 +1,10 @@
 # Antigravity StockPicker (Subreddit Stock Analyzer)
 
-An automated market intelligence system that extracts trending stock discussions from multiple subreddits (`r/wallstreetbets`, `r/stocks`, `r/ValueInvesting`) via official Reddit OAuth, validates tradeable securities via `yfinance`, gathers financial metrics, SEC filings, and latest news, and performs conservative AI-driven equity evaluations using Gemini. Persisted reports and multi-run historical analytics are served via a FastAPI backend and displayed through a responsive Next.js dashboard.
+An automated market intelligence system that discovers equity opportunities through two parallel scanning engines: **Engine 1 (Retail Momentum Scout)** which scrapes trending stock discussions across Reddit (`r/wallstreetbets`, `r/stocks`, `r/ValueInvesting`) via official Reddit OAuth, and **Engine 2 (Smart Money & Political Scout)** which aggregates SEC Form 4 insider cluster buys and Capitol Hill STOCK Act disclosures.
+
+Both discovery engines link into a decoupled, reusable **Core Equity Intelligence Engine (`CoreEquityIntel`)** that independently gathers fundamental metrics, SEC 10-Q/8-K disclosures, and DuckDuckGo corporate news, synthesizing objective ground truth and risk profiles with 6-hour caching. Engines 1 and 2 attach specialized overlays (`RetailReport` and `SmartMoneyReport`) over the core record, while the **Cross-Engine Synthesis Hub** correlates divergence across engines to classify stocks into market archetypes (*The Rocket*, *Silent Accumulation*, *The Retail Trap*, and *Market Noise*).
+
+Persisted intelligence is served via a FastAPI backend and rendered in a dark-mode Next.js dashboard featuring a 3-tab historical archive, Unified Master Equity Reports, and Archetype Lifecycle Progression timelines.
 
 ---
 
@@ -8,33 +12,40 @@ An automated market intelligence system that extracts trending stock discussions
 
 ```mermaid
 graph TD
-    subgraph Data Ingestion
-        A[Reddit OAuth API<br/>Multi-sub: WSB, stocks, ValueInvesting] --> C[Engine 1: Retail Momentum<br/>reddit_scraper.py + ticker_extractor.py]
-        B1[SEC Form 4 Code P & Congressional PTRs<br/>OpenInsider & Disclosures] --> E2[Engine 2: Smart Money Scout<br/>smart_money_ingestor.py + scorer.py]
-        B2[yfinance & DuckDuckGo Search<br/>Financial Metrics & News] --> D[Market Researcher]
+    subgraph Discovery Engines
+        A[Reddit OAuth API<br/>WSB, stocks, ValueInvesting] --> E1[Engine 1: Retail Momentum Scout<br/>reddit_scraper.py + ticker_extractor.py]
+        B[SEC Form 4 Code P & STOCK Act PTRs<br/>OpenInsider & Congressional Disclosures] --> E2[Engine 2: Smart Money Scout<br/>smart_money_ingestor.py + scorer.py]
     end
 
-    subgraph Pipeline & LLM Synthesis
-        C -->|Top 5 Validated Stocks| D
-        D --> AGENT[Gemini 4 Argon Agent]
-        AGENT --> DB[(SQLite Database<br/>stock_analyzer.db)]
-        E2 -->|High Conviction Candidates| RES[Smart Money Researcher]
-        RES --> DB
-        SYN[Synthesis Hub<br/>synthesis_engine.py] -->|Archetype Classification| DB
+    subgraph Reusable Foundational Intelligence
+        E1 -->|Top 5 Retail Tickers| CORE[Core Equity Intel Engine<br/>core_intel_engine.py]
+        E2 -->|Top 5 Smart Money Tickers| CORE
+        CORE -->|yfinance Ratios + SEC 10-Q/8-K + DuckDuckGo News| GEMINI[Gemini 4 Argon Core Synthesis<br/>Objective Ground Truth + Risk Analysis]
+        GEMINI -->|6-Hour Cached Fundamental Ground Truth| INTEL_DB[(core_equity_intels)]
+    end
+
+    subgraph Specialized Modular Overlays
+        INTEL_DB -->|Attach core_intel_id| RETAIL_OV[Retail Momentum Overlay<br/>retail_reports]
+        INTEL_DB -->|Attach core_intel_id| SMART_OV[Smart Money Overlay<br/>smart_money_reports]
+        RETAIL_OV --> SYN[Cross-Engine Synthesis Hub<br/>synthesis_engine.py]
+        SMART_OV --> SYN
+        SYN -->|Archetype Classification & Edge Score| SYN_DB[(synthesis_records)]
     end
 
     subgraph Backend API (FastAPI)
-        DB --> API[FastAPI Server<br/>main.py]
+        INTEL_DB --> API[FastAPI Server<br/>main.py]
+        RETAIL_OV --> API
+        SMART_OV --> API
+        SYN_DB --> API
     end
 
     subgraph Frontend Dashboard (Next.js)
-        API --> DASH[Retail Momentum Dashboard<br/>/]
-        API --> REP[Retail Intel Report<br/>/report/:ticker]
-        API --> SM[Smart Money & Gov Feed<br/>/smart-money]
-        API --> SM_REP[Smart Money Catalyst Report<br/>/smart-money/:ticker]
+        API --> DASH[Retail Momentum Feed<br/>/]
+        API --> SM[Smart Money Inflow Feed<br/>/smart-money]
         API --> SYN_PAGE[Cross-Engine Synthesis Matrix<br/>/synthesis]
-        API --> HIST[Historical Reports by Date<br/>/stats]
-        API --> ANALYTICS[Ticker Analytics & Trajectory<br/>/analytics]
+        API --> HIST[Historical Archives: 3 Dedicated Tabs<br/>/stats]
+        API --> MASTER_REP[Unified Master Equity Report<br/>/report/:ticker]
+        API --> ANALYTICS[Ticker Analytics & Archetype Lifecycle<br/>/analytics]
     end
 ```
 
@@ -46,27 +57,30 @@ graph TD
 stock-picker/
 ├── backend/
 │   ├── app/
-│   │   ├── agent.py                 # Pydantic AI agent for daily reports & trajectory meta-analyses
-│   │   ├── crud.py                  # Async SQLAlchemy CRUD operations
+│   │   ├── agent.py                 # Pydantic AI agent for retail reports & trajectory meta-analyses
+│   │   ├── core_intel_engine.py     # Decoupled Core Equity Intelligence researcher & 6-hr cache
+│   │   ├── crud.py                  # Async SQLAlchemy CRUD operations & multi-table date aggregation
 │   │   ├── database.py              # Engine & async SQLite session management (anchored to backend/stock_analyzer.db)
-│   │   ├── llm_schemas.py           # Pydantic schemas (StockReport, TrajectoryAnalysis, SmartMoneyReport)
-│   │   ├── main.py                  # FastAPI endpoints & CORS configuration
+│   │   ├── llm_schemas.py           # Pydantic schemas (CoreIntelSynthesis, RetailOverlay, SmartMoneyReport)
+│   │   ├── main.py                  # FastAPI endpoints & Unified Master Report aggregator
 │   │   ├── market_researcher.py     # yfinance & DuckDuckGo metrics, news fetcher, and ticker validator
-│   │   ├── models.py                # SQLAlchemy models (DailyTicker, TickerReport, SmartMoneyTicker, SynthesisRecord)
-│   │   ├── pipeline.py              # Engine 1 ingestion, evaluation, and persistence pipeline
+│   │   ├── models.py                # SQLAlchemy models (CoreEquityIntel, RetailReport, SmartMoneyReport, SynthesisRecord)
+│   │   ├── pipeline.py              # Engine 1 ingestion & Retail Overlay attachment
 │   │   ├── reddit_scraper.py        # Multi-subreddit Reddit OAuth API client (Client Credentials)
-│   │   ├── scheduler.py             # APScheduler cron job (19:00 SGT)
+│   │   ├── scheduler.py             # APScheduler cron job orchestrating discovery, core intel, & synthesis
 │   │   ├── smart_money_ingestor.py  # Market-wide SEC Form 4 (Code P) and Capitol Hill STOCK Act disclosures
-│   │   ├── smart_money_pipeline.py  # Engine 2 orchestrator for Smart Money & Political Scout
+│   │   ├── smart_money_pipeline.py  # Engine 2 orchestrator for Smart Money Inflow Overlay
 │   │   ├── smart_money_researcher.py# Gemini-driven government contract & swing catalyst researcher
 │   │   ├── smart_money_scorer.py    # Multi-factor conviction scoring & committee alignment matrix
 │   │   ├── synthesis_engine.py      # Cross-Engine matrix correlator (The Rocket, Retail Trap, Silent Accumulation)
 │   │   ├── telegram_notifier.py     # Telegram Bot API client with deduplication cache
-│   │   └── ticker_extractor.py      # Regex extraction, noise filtering, and engagement scoring
+│   │   └── ticker_extractor.py      # Regex extraction, noise blacklist filtering, and engagement scoring
 │   ├── scripts/
-│   │   └── reset_and_run.py         # Full database wipe & end-to-end multi-engine execution
+│   │   └── reset_and_run.py         # Full database wipe & end-to-end dual-engine execution
 │   ├── tests/
 │   │   ├── test_analytics_api.py    # Async integration tests for dates & analytics endpoints
+│   │   ├── test_api_endpoints.py    # Symmetrical namespaced endpoints (/api/retail, /api/master, /api/smart-money)
+│   │   ├── test_core_intel_and_tabs.py # Tests for Core Intel caching, candidate deduplication, & historical tab APIs
 │   │   ├── test_evals.py            # LLM evaluation and ticker validation tests
 │   │   ├── test_smart_money.py      # Form 4 extraction, smart money serialization & guardrails
 │   │   ├── test_smart_money_political.py # Engine 2 scoring, committee mapping & archetype tests
@@ -79,18 +93,22 @@ stock-picker/
 │   ├── src/
 │   │   ├── app/
 │   │   │   ├── page.tsx             # Homepage: Retail Momentum top stocks
+│   │   │   ├── retail/[ticker]/     # Retail Momentum Report: Engine 1 signals + Core Intel
 │   │   │   ├── smart-money/         # Smart Money & Gov: Market-wide radar & catalyst reports
 │   │   │   │   ├── page.tsx         # Inflow Feed & ranked candidates
-│   │   │   │   └── [ticker]/page.tsx# Executive inflow ledger & catalyst horizon
+│   │   │   │   └── [ticker]/page.tsx# Smart Money Catalyst Report: Inflow ledger + Core Intel
 │   │   │   ├── synthesis/page.tsx   # Cross-Engine Synthesis Matrix & Retail Awareness Gauge
-│   │   │   ├── stats/page.tsx       # Historical Reports explorer with date selector
-│   │   │   ├── analytics/page.tsx   # Multi-run Ticker Analytics & trajectory chart
-│   │   │   └── report/[ticker]/     # Four-Pillar Report & Smart Money Radar view
+│   │   │   ├── stats/page.tsx       # Historical Reports explorer: 3 Dedicated Tabs (Retail, Smart Money, Synthesis)
+│   │   │   ├── analytics/page.tsx   # Multi-run Ticker Analytics, trajectory chart & Archetype Lifecycle
+│   │   │   └── report/[ticker]/     # Unified Master Report: Contrarian Playbook + Core Intel + Retail + Smart Money
 │   │   ├── components/
-│   │   │   ├── Navbar.tsx           # Persistent top navigation bar across all 5 sections
+│   │   │   ├── Navbar.tsx           # Persistent top navigation bar across all 6 sections
+│   │   │   ├── ContrarianPlaybook.tsx # Cross-Engine Divergence Heatmap, execution tactics & lifecycle vector
 │   │   │   ├── SmartMoneyRadar.tsx  # Form 4 executive flow & Capitol Hill disclosures
 │   │   │   ├── PriceTrajectoryChart.tsx # SVG chart of Market Price vs Target Price
 │   │   │   ├── MetaAnalysisCard.tsx # On-demand AI Trajectory Meta-Analysis
+│   │   │   ├── ArchetypeLifecycleTimeline.tsx # Multi-run synthesis archetype migration timeline
+│   │   │   ├── SentimentTrajectoryTimeline.tsx # Social sentiment evolution timeline
 │   │   │   └── ValuationMetricsPanel.tsx # P/E ratios and 52-week trading range
 │   │   └── lib/
 │   │       └── api.ts               # Centralized frontend API base URL helper
@@ -175,6 +193,30 @@ stock-picker/
    npm run dev
    ```
 3. Open `http://localhost:3000`.
+
+---
+
+## Canonical API Reference
+
+| Domain | Endpoint | Method | Description |
+|---|---|---|---|
+| **Retail Momentum** | `/api/retail/today` | GET | Top retail momentum tickers from latest run |
+| | `/api/retail/reports` | GET | Historical retail momentum reports by `?date=` |
+| | `/api/retail/report/{ticker}` | GET | Detailed retail momentum report with linked Core Intel |
+| | `/api/retail/trigger` | POST | On-demand trigger for Engine 1 (Retail Momentum) |
+| **Smart Money** | `/api/smart-money/today` | GET | Latest Form 4 & STOCK Act candidate tickers |
+| | `/api/smart-money/reports` | GET | Historical smart money reports by `?date=` |
+| | `/api/smart-money/report/{ticker}` | GET | Self-contained smart catalyst report + Core Intel + Inflow Ledger |
+| | `/api/smart-money/trigger` | POST | On-demand trigger for Engine 2 (Smart Money Scout) |
+| **Synthesis & Master** | `/api/synthesis/today` | GET | Cross-engine archetype synthesis matrix records |
+| | `/api/synthesis/reports` | GET | Historical synthesis matrix records by `?date=` |
+| | `/api/master/report/{ticker}` | GET | Unified Master Report with Contrarian Playbook & multi-engine overlays |
+| | `/api/master/report/{ticker}/text` | GET | Plain-text summary for notifications/bots |
+| **Dates & Analytics** | `/api/dates` | GET | Distinct generated report dates across all engines |
+| | `/api/analytics/tickers` | GET | Distinct tracked tickers across all engines |
+| | `/api/analytics/ticker/{ticker}` | GET | Historical multi-run trajectory series |
+| | `/api/analytics/ticker/{ticker}/archetypes` | GET | Chronological synthesis archetype progression |
+| | `/api/analytics/ticker/{ticker}/meta-analysis` | GET/POST | Trajectory meta-analysis (retrieval & on-demand generation) |
 
 ---
 

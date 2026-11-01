@@ -34,3 +34,21 @@ The system SHALL quantify a retail awareness metric indicating whether retail tr
 - **WHEN** evaluating a smart money candidate
 - **THEN** the system outputs a retail awareness indicator showing whether retail mentions are low (high timing edge), rising, or saturated.
 
+### Requirement: Historical Archetype Snapshot Query
+The system SHALL provide an API endpoint returning deduplicated synthesis matrix records for a requested historical date.
+
+#### Scenario: Query Archetypes by Historical Date
+- **WHEN** a client requests synthesis records for a valid historical date
+- **THEN** the system returns all unique tickers classified on that date, sorted by timing edge score descending with archetype labels and divergence diagnoses.
+
+### Requirement: Actionable Contrarian Playbook and Divergence Scorecard
+The Cross-Engine Synthesis Master Report SHALL generate and present a Divergence Scorecard comparing Retail Sentiment against Smart Money Conviction alongside an Actionable Contrarian Playbook tailored to the stock's market archetype.
+
+#### Scenario: View Contrarian Playbook
+- **WHEN** a synthesis record or master report is viewed for an active stock
+- **THEN** the system generates a tailored tactical gameplan containing:
+  - **Divergence Heatmap**: Visualizing Retail Sentiment vs. Smart Money Conviction.
+  - **Entry Strategy**: Specific accumulation rules (e.g., pre-breakout stealth accumulation vs. riding institutional flow with trailing stops).
+  - **Catalyst Horizon**: Target swing duration and key calendar triggers.
+  - **Exit Signals**: Concrete liquidation or stop-loss rules (e.g., exit upon retail mention surge or Form 4 disposition filings).
+  - **Archetype Lifecycle Vector**: Directional progress indicator through `Silent Accumulation ➔ The Rocket ➔ The Retail Trap ➔ Market Noise`.

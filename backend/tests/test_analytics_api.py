@@ -104,7 +104,7 @@ async def test_db():
 async def test_get_report_dates(test_db):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        res = await client.get("/api/reports/dates")
+        res = await client.get("/api/dates")
         assert res.status_code == 200
         dates = res.json()
         assert dates == ["2026-10-29", "2026-10-28"]
@@ -114,7 +114,7 @@ async def test_get_reports_by_date(test_db):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         # Specific date
-        res = await client.get("/api/reports?date=2026-10-29")
+        res = await client.get("/api/retail/reports?date=2026-10-29")
         assert res.status_code == 200
         reports = res.json()
         assert len(reports) == 3
@@ -124,7 +124,7 @@ async def test_get_reports_by_date(test_db):
         assert "GOOG" in tickers
         
         # Default latest date
-        res_latest = await client.get("/api/reports")
+        res_latest = await client.get("/api/retail/reports")
         assert res_latest.status_code == 200
         assert len(res_latest.json()) == 3
 
@@ -156,8 +156,8 @@ async def test_get_ticker_analytics(test_db):
         assert len(goog_history) == 1
         assert goog_history[0]["ticker"] == "GOOG"
 
-        # Report alias resolution: requesting /api/reports/GOOGL should return GOOG report
-        res_rep_alias = await client.get("/api/reports/GOOGL")
+        # Report alias resolution: requesting /api/master/report/GOOGL should return GOOG report
+        res_rep_alias = await client.get("/api/master/report/GOOGL")
         assert res_rep_alias.status_code == 200
         assert res_rep_alias.json()["ticker"] == "GOOG"
 

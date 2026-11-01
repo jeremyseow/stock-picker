@@ -33,43 +33,45 @@ The frontend dashboard homepage SHALL display the top highly discussed stocks fr
 - **THEN** the run-date badge is styled amber and shows "(N days ago)"; otherwise it is styled green.
 
 ### Requirement: Display Individual Stock Report
-The frontend dashboard SHALL allow the user to click on a stock ticker to view its detailed generated research report, including the Smart Money & Insider Trading Radar.
+The frontend dashboard SHALL allow the user to click on a stock ticker to view its detailed unified master equity research report, dynamically presenting Core Fundamentals, Retail Momentum sentiment, Smart Money inflow catalysts, and Cross-Engine synthesis diagnosis with a Divergence Scorecard and Contrarian Execution Playbook.
 
 #### Scenario: View Report Details
-- **WHEN** a user clicks on a specific stock from the daily list
-- **THEN** a detailed view opens, displaying:
-  - **Hero Header**: Ticker symbol, Sector/Industry, current price vs target price, and calculated potential upside percentage (`+XX.X%`).
-  - **Analyst Callout**: Rationale and immediate actionable insight highlighted prominently.
-  - **Four Pillar Analysis Grid**:
-    1. **Community Sentiment**: Sentiment score + detailed hype discussion.
-    2. **Ground Truth**: Clean paragraphs for Corporate Position and Filings/News Analysis.
-    3. **Events & Happenings**: Key corporate/industry events, launches, or macro happenings (wars, conflicts).
-    4. **AI Reconciliation**: Risk level badge + reconciliation analysis.
-  - **Smart Money & Insider Trading Radar**:
-    - 6-Month Net Insider Flow gauge (Net Buying vs. Net Selling indicator with dollar volumes).
-    - Recent Form 4 transactions table displaying transaction dates, executive names, executive positions, share count, dollar value, and transaction badge (Buy/Sell).
-    - Congressional and Senate trade disclosure summary.
-    - AI Smart Money Divergence verdict callout.
-  - **Financial Ratios Grid**: Trailing P/E, forward P/E, 52-week high/low.
-  - **Corporate News headlines list**: Render raw news articles as clickable external links (if links exist).
+- **WHEN** a user clicks on a stock ticker from any list, feed, or matrix
+- **THEN** a detailed unified view opens, displaying:
+  - **Master Hero Header**: Ticker symbol, company name, sector/industry, current price vs target price, calculated potential upside percentage, and active signal badges (Retail recommendation and/or Smart Money conviction tier).
+  - **Cross-Engine Divergence & Contrarian Playbook**:
+    1. **Divergence Heatmap**: Comparative bar or visual meter comparing Retail Sentiment vs Smart Money Conviction.
+    2. **Contrarian Execution Playbook**: Concrete tactical gameplan with Entry Timing, Target Horizon, and Exit Signals based on the market archetype.
+    3. **Lifecycle Phase Vector**: Step indicator displaying where the ticker sits in its lifecycle (`Silent Accumulation ➔ The Rocket ➔ The Retail Trap ➔ Market Noise`).
+  - **Core Fundamentals & Ground Truth Grid**:
+    1. **Financial Ratios Grid**: Trailing P/E, forward P/E, 52-week trading range, market cap.
+    2. **Ground Truth**: Corporate Position and SEC Filings/News Analysis.
+    3. **Events & Happenings**: Key corporate events, product launches, or macro/geopolitical events.
+    4. **Risk Assessment**: Risk level badge (Low/Medium/High) and risk factors.
+  - **Smart Money & Political Inflow Section**: Inflow ledger table, cluster buying metrics, committee relevance tags, catalyst horizon, and swing thesis.
+  - **Retail Momentum Section**: Sentiment meter, narrative hype summary, and community expectations.
 
 ### Requirement: Display Date-Selected Historical Reports
-The frontend dashboard SHALL provide a Historical Reports view that enables users to view all available pipeline run dates and display the intelligence reports generated on a selected date.
+The frontend dashboard SHALL provide a Historical Reports view that enables users to view all available pipeline run dates and display intelligence reports across three dedicated tabs: Retail Momentum, Smart Money & Gov, and Synthesis Matrix.
 
 #### Scenario: View Available Dates
 - **WHEN** the user navigates to the Historical Reports view
-- **THEN** the interface fetches and presents a list or picker of all historical run dates.
+- **THEN** the interface fetches and presents a list or picker of all historical run dates aggregated across all engines.
 
 #### Scenario: Select Date and View Reports
 - **WHEN** the user selects a specific date
-- **THEN** the dashboard fetches and renders report preview cards for each ticker analyzed on that date, showing ticker symbol, recommendation badge, price, target price, and industry.
+- **THEN** the dashboard renders three tabs with item count badges (`Retail Momentum (N)`, `Smart Money & Gov (N)`, `Synthesis Matrix (N)`) and displays the corresponding reports for the active tab.
+
+#### Scenario: Engine Not Tracked on Historical Date
+- **WHEN** the user selects a tab for an engine that was not recorded on the selected date
+- **THEN** a clean informative empty state card indicates that the engine was not tracked on that date.
 
 #### Scenario: No Reports for Date
-- **WHEN** the user selects a date that has no recorded reports
+- **WHEN** the user selects a date that has no recorded reports across any engine
 - **THEN** a clear informative message is displayed stating no reports are available for that date.
 
 ### Requirement: Display Smart Money & Political Scout View
-The frontend dashboard SHALL provide a dedicated Smart Money view (`/smart-money`) displaying Engine 2 picks and individual catalyst reports (`/smart-money/[ticker]`).
+The frontend dashboard SHALL provide a dedicated Smart Money view (`/smart-money`) displaying Engine 2 picks and individual catalyst reports (`/smart-money/[ticker]`) self-contained with Core Fundamentals and SEC ground truth.
 
 #### Scenario: View Smart Money Feed
 - **WHEN** the user navigates to `/smart-money`
@@ -77,7 +79,9 @@ The frontend dashboard SHALL provide a dedicated Smart Money view (`/smart-money
 
 #### Scenario: View Smart Money Individual Report
 - **WHEN** the user opens `/smart-money/[ticker]`
-- **THEN** they see an Inflow Ledger detailing executive and political transactions, legislative catalyst research, and a medium-term swing thesis.
+- **THEN** they see a self-contained report displaying:
+  1. The Inflow Ledger detailing executive and political transactions, cluster metrics, committee jurisdictions, and a medium-term swing thesis.
+  2. The Core Fundamentals & Ground Truth Grid (valuation multiples, SEC 10-Q/8-K ground truth, corporate positioning, key catalyst events, and risk scores).
 
 ### Requirement: Display Cross-Engine Synthesis Matrix
 The frontend dashboard SHALL provide a Synthesis Matrix view (`/synthesis`) displaying market archetype diagnoses and retail awareness measurements.
@@ -85,3 +89,21 @@ The frontend dashboard SHALL provide a Synthesis Matrix view (`/synthesis`) disp
 #### Scenario: View Synthesis Matrix
 - **WHEN** the user navigates to `/synthesis`
 - **THEN** they see active stocks mapped across the 4 archetypes (The Rocket, The Retail Trap, Silent Accumulation, Market Noise) with retail awareness indicators and actionable divergence callouts.
+
+### Requirement: Display Archetype Lifecycle Trajectory in Ticker Analytics
+The frontend Ticker Analytics view SHALL display an Archetype Lifecycle Timeline showing how a stock migrated across synthesis archetypes over historical pipeline runs.
+
+#### Scenario: View Archetype Trajectory
+- **WHEN** viewing a ticker with historical pipeline reports
+- **THEN** an Archetype Progression timeline illustrates the stock's transition between archetypes (e.g. Silent Accumulation to The Rocket to The Retail Trap) with corresponding timing edge scores.
+
+### Requirement: Standardized API Namespacing and Unified Link Terminology
+The application SHALL provide consistently namespaced endpoints and unified link labels across all user interfaces.
+
+#### Scenario: Query Namespaced Endpoints
+- **WHEN** a client requests data for Retail Momentum, Smart Money Scout, Cross-Engine Synthesis, or Master Reports
+- **THEN** the backend serves consistently namespaced paths:
+  - `/api/retail/reports`, `/api/retail/tickers/today`, and `/api/retail/report/{ticker}` (Engine 1)
+  - `/api/smart-money/reports` and `/api/smart-money/report/{ticker}` (Engine 2)
+  - `/api/synthesis/reports` and `/api/synthesis/latest` (Cross-Engine)
+  - `/api/master/report/{ticker}` (Unified Master Report)

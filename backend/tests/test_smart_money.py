@@ -195,7 +195,7 @@ async def smart_money_test_db():
 
 @pytest.mark.asyncio
 async def test_api_serves_smart_money_data(smart_money_test_db):
-    """Test /api/reports/{ticker} and /api/reports return smart_money_verdict and raw_insider_data."""
+    """Test /api/master/report/{ticker} and /api/retail/reports return smart_money_verdict and raw_insider_data."""
     async_session = async_sessionmaker(smart_money_test_db, expire_on_commit=False, class_=AsyncSession)
 
     async def override_get_db():
@@ -207,7 +207,7 @@ async def test_api_serves_smart_money_data(smart_money_test_db):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         # 1. Fetch individual report
-        resp = await ac.get("/api/reports/TSLA")
+        resp = await ac.get("/api/master/report/TSLA")
         assert resp.status_code == 200
         data = resp.json()
         assert data["ticker"] == "TSLA"
@@ -219,7 +219,7 @@ async def test_api_serves_smart_money_data(smart_money_test_db):
         assert len(data["raw_insider_data"]["recent_transactions"]) == 1
 
         # 2. Fetch list of reports
-        list_resp = await ac.get("/api/reports?date=2026-10-30")
+        list_resp = await ac.get("/api/retail/reports?date=2026-10-30")
         assert list_resp.status_code == 200
         items = list_resp.json()
         assert len(items) == 1

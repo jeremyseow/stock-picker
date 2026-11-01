@@ -1,6 +1,7 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, JSON
+from sqlalchemy import Column, Integer, String, Float, DateTime, JSON, ForeignKey
 from datetime import datetime, timezone
 from app.database import Base
+
 
 class DailyTicker(Base):
     __tablename__ = "daily_tickers"
@@ -11,35 +12,78 @@ class DailyTicker(Base):
     rank = Column(Integer)
     mention_count = Column(Integer)
     engagement_score = Column(Float)
-    
-class TickerReport(Base):
-    __tablename__ = "ticker_reports"
-    
+
+
+class CoreEquityIntel(Base):
+    """
+    Shared foundational equity research record across both discovery engines.
+    Stores financial ratios, SEC 10-Q/8-K analyses, corporate news, and Gemini ground truth synthesis.
+    """
+    __tablename__ = "core_equity_intels"
+
     id = Column(Integer, primary_key=True, index=True)
     ticker = Column(String, index=True)
     date = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
-    
-    current_price = Column(Float)
-    target_price = Column(Float)
-    
-    community_sentiment = Column(String)
-    community_hype = Column(String)
-    
-    ground_truth_status = Column(String)
-    ground_truth_filings_news = Column(String)
-    events_happenings = Column(String)
-    
-    smart_money_verdict = Column(String)
-    raw_insider_data = Column(JSON)
-    
-    reconciliation_risk_score = Column(String)
-    reconciliation_analysis = Column(String)
-    reconciliation_actionable_insight = Column(String)
-    
-    recommendation = Column(String) # BUY, SELL, HOLD
-    recommendation_rationale = Column(String)
-    raw_metrics = Column(JSON)
-    raw_news = Column(JSON)
+
+    company_name = Column(String, nullable=True)
+    sector = Column(String, nullable=True)
+    industry = Column(String, nullable=True)
+    current_price = Column(Float, nullable=True)
+    target_price = Column(Float, nullable=True)
+
+    ground_truth_status = Column(String, nullable=True)
+    ground_truth_filings_news = Column(String, nullable=True)
+    events_happenings = Column(String, nullable=True)
+
+    risk_score = Column(String, nullable=True)  # Low, Medium, High
+    risk_analysis = Column(String, nullable=True)
+    actionable_insight = Column(String, nullable=True)
+
+    raw_metrics = Column(JSON, nullable=True)
+    raw_news = Column(JSON, nullable=True)
+    raw_filings = Column(JSON, nullable=True)
+
+
+class RetailReport(Base):
+    """
+    Engine 1 specialized overlay: Retail sentiment, hype narrative, and conservative recommendation.
+    Links to CoreEquityIntel for fundamental grounding.
+    """
+    __tablename__ = "retail_reports"
+
+    id = Column(Integer, primary_key=True, index=True)
+    ticker = Column(String, index=True)
+    date = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    core_intel_id = Column(Integer, ForeignKey("core_equity_intels.id"), nullable=True, index=True)
+
+    rank = Column(Integer, nullable=True)
+    mention_count = Column(Integer, default=0)
+    engagement_score = Column(Float, default=0.0)
+
+    community_sentiment = Column(String, nullable=True)
+    community_hype = Column(String, nullable=True)
+
+    recommendation = Column(String, nullable=True)  # BUY, SELL, HOLD
+    recommendation_rationale = Column(String, nullable=True)
+    reconciliation_actionable_insight = Column(String, nullable=True)
+    smart_money_verdict = Column(String, nullable=True)
+    raw_insider_data = Column(JSON, nullable=True)
+
+    # Denormalized convenience fields populated from CoreEquityIntel
+    current_price = Column(Float, nullable=True)
+    target_price = Column(Float, nullable=True)
+    ground_truth_status = Column(String, nullable=True)
+    ground_truth_filings_news = Column(String, nullable=True)
+    events_happenings = Column(String, nullable=True)
+    reconciliation_risk_score = Column(String, nullable=True)
+    reconciliation_analysis = Column(String, nullable=True)
+    raw_metrics = Column(JSON, nullable=True)
+    raw_news = Column(JSON, nullable=True)
+
+
+# Backward-compatibility alias
+TickerReport = RetailReport
+
 
 class TickerTrajectoryAnalysis(Base):
     __tablename__ = "ticker_trajectory_analyses"
@@ -71,28 +115,42 @@ class SmartMoneyTicker(Base):
 
 
 class SmartMoneyReport(Base):
-    """Detailed catalyst and macro research report for an Engine 2 candidate."""
+    """
+    Engine 2 specialized overlay: Form 4 inflow ledger, committee jurisdiction, and swing catalyst horizon.
+    Links to CoreEquityIntel for fundamental grounding.
+    """
     __tablename__ = "smart_money_reports"
 
     id = Column(Integer, primary_key=True, index=True)
     ticker = Column(String, index=True)
     date = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    core_intel_id = Column(Integer, ForeignKey("core_equity_intels.id"), nullable=True, index=True)
 
-    company_name = Column(String)
-    sector = Column(String)
-    industry = Column(String)
-    current_price = Column(Float)
-    target_price = Column(Float)
+    company_name = Column(String, nullable=True)
+    sector = Column(String, nullable=True)
+    industry = Column(String, nullable=True)
+    current_price = Column(Float, nullable=True)
+    target_price = Column(Float, nullable=True)
 
-    conviction_score = Column(Float)
-    conviction_tier = Column(String)  # High Conviction Catalyst Buy, Speculative Accumulation, etc.
-    inflow_ledger = Column(JSON)      # List of individual insider & Congressional transactions
+    rank = Column(Integer, nullable=True)
+    conviction_score = Column(Float, default=0.0)
+    conviction_tier = Column(String, nullable=True)
+    cluster_count = Column(Integer, default=0)
+    total_buy_volume = Column(Float, default=0.0)
+    top_buyer_summary = Column(String, nullable=True)
+    inflow_ledger = Column(JSON, nullable=True)
 
-    political_catalyst_analysis = Column(String)
-    corporate_catalyst_analysis = Column(String)
-    catalyst_horizon = Column(String)  # e.g. "45-75 days until NDAA markup"
-    actionable_thesis = Column(String)
-    raw_metrics = Column(JSON)
+    political_catalyst_analysis = Column(String, nullable=True)
+    corporate_catalyst_analysis = Column(String, nullable=True)
+    catalyst_horizon = Column(String, nullable=True)
+    actionable_thesis = Column(String, nullable=True)
+
+    # Denormalized convenience fields populated from CoreEquityIntel
+    ground_truth_status = Column(String, nullable=True)
+    ground_truth_filings_news = Column(String, nullable=True)
+    events_happenings = Column(String, nullable=True)
+    risk_score = Column(String, nullable=True)
+    raw_metrics = Column(JSON, nullable=True)
 
 
 class SynthesisRecord(Base):
@@ -102,6 +160,7 @@ class SynthesisRecord(Base):
     id = Column(Integer, primary_key=True, index=True)
     ticker = Column(String, index=True)
     date = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    core_intel_id = Column(Integer, ForeignKey("core_equity_intels.id"), nullable=True, index=True)
 
     archetype = Column(String)  # The Rocket, The Retail Trap, Silent Accumulation, Market Noise
     retail_rank = Column(Integer, nullable=True)
@@ -116,4 +175,3 @@ class SynthesisRecord(Base):
     timing_edge_score = Column(Float)        # 0.0 to 100.0
     synthesis_diagnosis = Column(String)
     recommended_action = Column(String)     # STRONG BUY, AVOID/SHORT, EARLY SWING BUY, PASS
-

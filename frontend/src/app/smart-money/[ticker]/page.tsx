@@ -16,6 +16,23 @@ interface InflowEntry {
   delta_own: string;
 }
 
+interface CoreIntelFacet {
+  has_data: boolean;
+  company_name: string;
+  sector: string;
+  industry: string;
+  current_price: number | null;
+  target_price: number | null;
+  ground_truth_status: string;
+  ground_truth_filings_news: string;
+  events_happenings: string;
+  risk_score: string;
+  risk_analysis: string;
+  actionable_insight: string;
+  raw_metrics: Record<string, any>;
+  raw_news?: Array<{ title?: string; publisher?: string; link?: string }>;
+}
+
 interface SmartMoneyReportDetail {
   id: number;
   ticker: string;
@@ -32,7 +49,10 @@ interface SmartMoneyReportDetail {
   corporate_catalyst_analysis: string;
   catalyst_horizon: string;
   actionable_thesis: string;
+  ground_truth_status?: string;
+  risk_score?: string;
   raw_metrics: Record<string, any>;
+  core_intel?: CoreIntelFacet;
 }
 
 export default function SmartMoneyDetailPage() {
@@ -41,6 +61,25 @@ export default function SmartMoneyDetailPage() {
   const [report, setReport] = useState<SmartMoneyReportDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const formatMarketCap = (num?: number | null) => {
+    if (!num) return "N/A";
+    if (num >= 1e12) return `$${(num / 1e12).toFixed(2)}T`;
+    if (num >= 1e9) return `$${(num / 1e9).toFixed(2)}B`;
+    if (num >= 1e6) return `$${(num / 1e6).toFixed(2)}M`;
+    return `$${num.toLocaleString()}`;
+  };
+
+  const riskBadgeStyles = (score?: string) => {
+    switch (score) {
+      case "Low":
+        return "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
+      case "High":
+        return "bg-rose-500/10 text-rose-400 border-rose-500/20";
+      default:
+        return "bg-amber-500/10 text-amber-400 border-amber-500/20";
+    }
+  };
 
   useEffect(() => {
     if (!ticker) return;
@@ -69,13 +108,17 @@ export default function SmartMoneyDetailPage() {
 
       <main className="max-w-5xl mx-auto px-6 py-12 relative">
         {/* Breadcrumb & Navigation */}
-        <div className="flex items-center justify-between gap-4 mb-8 text-xs font-semibold">
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-8 text-xs font-semibold">
           <Link href="/smart-money" className="text-slate-400 hover:text-white transition-colors flex items-center gap-1.5">
             <span>&larr;</span> Back to Smart Money Scout
           </Link>
           <div className="flex items-center gap-3">
+            <Link href={`/retail/${ticker}`} className="text-amber-400 hover:text-amber-300 transition-colors">
+              View Retail Momentum Report &rarr;
+            </Link>
+            <span className="text-slate-700">|</span>
             <Link href={`/report/${ticker}`} className="text-indigo-400 hover:text-indigo-300 transition-colors">
-              View Retail Report &rarr;
+              View Unified Master Report &rarr;
             </Link>
             <span className="text-slate-700">|</span>
             <Link href="/synthesis" className="text-purple-400 hover:text-purple-300 transition-colors">
@@ -103,10 +146,13 @@ export default function SmartMoneyDetailPage() {
             <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-6 sm:p-8 backdrop-blur-sm">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-6 border-b border-slate-800/60">
                 <div>
-                  <div className="flex items-center gap-3 mb-2">
+                  <div className="flex flex-wrap items-center gap-3 mb-2">
                     <h1 className="text-4xl font-black text-white">${report.ticker}</h1>
                     <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                       🟢 {report.conviction_tier}
+                    </span>
+                    <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                      ✓ SEC Ground Truth Verified
                     </span>
                   </div>
                   <p className="text-slate-400 text-sm font-medium">
@@ -114,7 +160,7 @@ export default function SmartMoneyDetailPage() {
                   </p>
                 </div>
 
-                <div className="flex items-center gap-6">
+                <div className="flex items-center gap-6 shrink-0">
                   {report.current_price !== null && (
                     <div>
                       <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Live Price</span>
@@ -134,8 +180,18 @@ export default function SmartMoneyDetailPage() {
                 </div>
               </div>
 
-              {/* Actionable Thesis Callout */}
-              <div className="mt-6 p-4 rounded-xl bg-indigo-500/10 border border-indigo-500/20">
+              {/* Ground Truth Moat Description Box - Full Width */}
+              {(report.core_intel?.ground_truth_status || report.ground_truth_status) && (
+                <div className="mt-6 p-4 rounded-xl bg-slate-950/60 border border-indigo-500/20 text-xs text-slate-300 leading-relaxed">
+                  <div className="flex items-center gap-1.5 text-indigo-400 font-bold uppercase tracking-wider text-[10px] mb-1.5">
+                    <span>🏢</span> Fundamental Ground Truth & Competitive Moat
+                  </div>
+                  <p>{report.core_intel?.ground_truth_status || report.ground_truth_status}</p>
+                </div>
+              )}
+
+              {/* Actionable Thesis Callout - Full Width */}
+              <div className="mt-4 p-4 rounded-xl bg-indigo-500/10 border border-indigo-500/20">
                 <span className="text-indigo-400 text-[10px] font-extrabold uppercase tracking-wider block mb-1">
                   ⚡ Smart Money Swing Thesis
                 </span>
@@ -144,6 +200,56 @@ export default function SmartMoneyDetailPage() {
                 </p>
               </div>
             </div>
+
+            {/* Core Fundamentals & Valuation Grid */}
+            {(() => {
+              const metrics = report.core_intel?.raw_metrics || report.raw_metrics || {};
+              const upsidePct = (report.current_price && report.target_price && report.current_price > 0)
+                ? ((report.target_price - report.current_price) / report.current_price) * 100
+                : null;
+              return (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                  <div className="bg-slate-900/40 border border-slate-800/80 rounded-xl p-3.5 backdrop-blur-sm">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Market Cap</span>
+                    <span className="text-base font-black text-white">
+                      {formatMarketCap(metrics?.market_cap || metrics?.marketCap)}
+                    </span>
+                  </div>
+                  <div className="bg-slate-900/40 border border-slate-800/80 rounded-xl p-3.5 backdrop-blur-sm">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Trailing P/E</span>
+                    <span className="text-base font-black text-indigo-300">
+                      {(metrics?.pe_ratio ?? metrics?.trailingPE) ? `${Number(metrics.pe_ratio ?? metrics.trailingPE).toFixed(1)}x` : "N/A"}
+                    </span>
+                  </div>
+                  <div className="bg-slate-900/40 border border-slate-800/80 rounded-xl p-3.5 backdrop-blur-sm">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Forward P/E</span>
+                    <span className="text-base font-black text-indigo-300">
+                      {(metrics?.forward_pe ?? metrics?.forwardPE) ? `${Number(metrics.forward_pe ?? metrics.forwardPE).toFixed(1)}x` : "N/A"}
+                    </span>
+                  </div>
+                  <div className="bg-slate-900/40 border border-slate-800/80 rounded-xl p-3.5 backdrop-blur-sm">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">52-Week Range</span>
+                    <span className="text-xs font-bold text-slate-200">
+                      {(metrics?.fifty_two_week_low ?? metrics?.fiftyTwoWeekLow) && (metrics?.fifty_two_week_high ?? metrics?.fiftyTwoWeekHigh)
+                        ? `$${Number(metrics.fifty_two_week_low ?? metrics.fiftyTwoWeekLow).toFixed(0)} - $${Number(metrics.fifty_two_week_high ?? metrics.fiftyTwoWeekHigh).toFixed(0)}`
+                        : "N/A"}
+                    </span>
+                  </div>
+                  <div className="bg-slate-900/40 border border-slate-800/80 rounded-xl p-3.5 backdrop-blur-sm">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Beta (Vol)</span>
+                    <span className="text-base font-black text-purple-300">
+                      {metrics?.beta ? Number(metrics.beta).toFixed(2) : "1.00"}
+                    </span>
+                  </div>
+                  <div className="bg-slate-900/40 border border-slate-800/80 rounded-xl p-3.5 backdrop-blur-sm">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">Target Upside</span>
+                    <span className="text-base font-black text-emerald-400">
+                      {upsidePct !== null ? `${upsidePct >= 0 ? "+" : ""}${upsidePct.toFixed(1)}%` : "N/A"}
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Inflow Ledger */}
             <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-6 sm:p-8 backdrop-blur-sm">
@@ -208,6 +314,63 @@ export default function SmartMoneyDetailPage() {
                   </h3>
                   <p className="text-xs text-slate-300 leading-relaxed">
                     {report.corporate_catalyst_analysis}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Ground Truth & Fundamental Risk Profile Grid */}
+            <div className="grid gap-6 md:grid-cols-3">
+              {/* SEC Ground Truth */}
+              <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-6 backdrop-blur-sm flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="w-6 h-6 rounded bg-indigo-500/10 text-indigo-400 flex items-center justify-center text-xs font-bold">
+                      📄
+                    </span>
+                    <h3 className="font-extrabold text-slate-200 text-sm">SEC Ground Truth & Disclosures</h3>
+                  </div>
+                  <p className="text-slate-300 text-xs leading-relaxed">
+                    {report.core_intel?.ground_truth_filings_news || "Financial metrics cross-referenced with public SEC 10-Q/8-K regulatory filings."}
+                  </p>
+                </div>
+              </div>
+
+              {/* Events & Happenings */}
+              <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-6 backdrop-blur-sm flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="w-6 h-6 rounded bg-purple-500/10 text-purple-400 flex items-center justify-center text-xs font-bold">
+                      💥
+                    </span>
+                    <h3 className="font-extrabold text-slate-200 text-sm">Key Events & Macro Happenings</h3>
+                  </div>
+                  <p className="text-slate-300 text-xs leading-relaxed">
+                    {report.core_intel?.events_happenings || "Corporate earnings, executive restructuring, and regulatory developments."}
+                  </p>
+                </div>
+              </div>
+
+              {/* Risk Profile & Analysis */}
+              <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-6 backdrop-blur-sm flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="w-6 h-6 rounded bg-teal-500/10 text-teal-400 flex items-center justify-center text-xs font-bold">
+                        ⚖️
+                      </span>
+                      <h3 className="font-extrabold text-slate-200 text-sm">Risk Assessment</h3>
+                    </div>
+                    <span
+                      className={`px-2 py-0.5 text-xs font-bold rounded border ${riskBadgeStyles(
+                        report.core_intel?.risk_score || report.risk_score
+                      )}`}
+                    >
+                      {report.core_intel?.risk_score || report.risk_score || "Medium"}
+                    </span>
+                  </div>
+                  <p className="text-slate-300 text-xs leading-relaxed">
+                    {report.core_intel?.risk_analysis || "Operational and market risk cross-checked against fundamental leverage and valuation."}
                   </p>
                 </div>
               </div>

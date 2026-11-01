@@ -6,6 +6,7 @@ import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import PriceTrajectoryChart, { HistoryPoint } from "@/components/PriceTrajectoryChart";
 import MetaAnalysisCard from "@/components/MetaAnalysisCard";
+import ArchetypeLifecycleTimeline from "@/components/ArchetypeLifecycleTimeline";
 import SentimentTrajectoryTimeline from "@/components/SentimentTrajectoryTimeline";
 import ValuationMetricsPanel from "@/components/ValuationMetricsPanel";
 import ActionableInsightsLog from "@/components/ActionableInsightsLog";
@@ -63,6 +64,7 @@ function AnalyticsContent() {
         setLoadingHistory(false);
       })
       .catch((err) => {
+        setHistory([]);
         setError(err.message);
         setLoadingHistory(false);
       });
@@ -197,15 +199,27 @@ function AnalyticsContent() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-4">
-                <span className="text-xs font-semibold text-slate-400">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-semibold text-slate-400 mr-2">
                   {history.length} Run{history.length > 1 ? "s" : ""} Recorded
                 </span>
                 <Link
-                  href={`/report/${selectedTicker}`}
-                  className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700/80 transition-all"
+                  href={`/retail/${selectedTicker}`}
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-900 hover:bg-slate-800 text-amber-300 border border-amber-500/30 transition-all"
                 >
-                  View Latest Full Report &rarr;
+                  Retail Report &rarr;
+                </Link>
+                <Link
+                  href={`/smart-money/${selectedTicker}`}
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-900 hover:bg-slate-800 text-purple-300 border border-purple-500/30 transition-all"
+                >
+                  Smart Money Report &rarr;
+                </Link>
+                <Link
+                  href={`/report/${selectedTicker}`}
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 transition-all"
+                >
+                  Unified Master Report &rarr;
                 </Link>
               </div>
             </div>
@@ -216,7 +230,10 @@ function AnalyticsContent() {
             {/* 2. AI Trajectory Meta-Analysis Card */}
             <MetaAnalysisCard ticker={selectedTicker} reportCount={history.length} />
 
-            {/* 3. Sentiment & Recommendation Timeline */}
+            {/* 3. Archetype Lifecycle Progression Timeline */}
+            <ArchetypeLifecycleTimeline ticker={selectedTicker} />
+
+            {/* 4. Sentiment & Recommendation Timeline */}
             <SentimentTrajectoryTimeline data={history} />
 
             {/* 4. Valuation Multiples & Trading Range */}

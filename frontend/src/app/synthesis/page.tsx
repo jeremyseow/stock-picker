@@ -237,13 +237,18 @@ export default function SynthesisPage() {
               </div>
 
               {/* Action Links */}
-              <div className="mt-4 pt-3 border-t border-slate-800/40 flex items-center justify-between text-xs font-bold">
+              <div className="mt-4 pt-3 border-t border-slate-800/40 flex flex-wrap items-center justify-between gap-2 text-xs font-bold">
                 <Link href={`/report/${r.ticker}`} className="text-indigo-400 hover:text-indigo-300 transition-colors">
-                  View Retail Momentum Report &rarr;
+                  View Unified Master Report &rarr;
                 </Link>
-                <Link href={`/smart-money/${r.ticker}`} className="text-purple-400 hover:text-purple-300 transition-colors">
-                  View Smart Money Catalyst Report &rarr;
-                </Link>
+                <div className="flex items-center gap-3">
+                  <Link href={`/retail/${r.ticker}`} className="text-amber-400 hover:text-amber-300 transition-colors font-medium">
+                    Retail Report &rarr;
+                  </Link>
+                  <Link href={`/smart-money/${r.ticker}`} className="text-purple-400 hover:text-purple-300 transition-colors font-medium">
+                    Smart Money &rarr;
+                  </Link>
+                </div>
               </div>
             </div>
           ))}

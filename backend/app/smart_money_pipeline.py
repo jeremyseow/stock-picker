@@ -4,6 +4,7 @@ from app.database import init_db, AsyncSessionLocal
 from app.smart_money_ingestor import ingest_all_smart_money
 from app.smart_money_scorer import rank_smart_money_candidates
 from app.smart_money_researcher import research_smart_money_candidate
+from app.core_intel_engine import research_core_equity_intel
 from app.crud import save_smart_money_tickers, save_smart_money_report
 
 logger = logging.getLogger(__name__)
@@ -45,9 +46,25 @@ async def run_smart_money_pipeline(limit: int = 5) -> list[dict]:
         # Step 4: Research & Report Generation
         reports = []
         async with AsyncSessionLocal() as db:
-            for c in top_candidates:
+            for idx, c in enumerate(top_candidates):
+                ticker = c["ticker"]
+                logger.info(f"Conducting Core Equity Intel for Smart Money candidate ${ticker}...")
+                core_intel = await research_core_equity_intel(ticker, db=db)
+
+                logger.info(f"Generating Smart Money Catalyst report for ${ticker}...")
                 report_data = await research_smart_money_candidate(c)
-                await save_smart_money_report(db, report_data)
+                report_data["rank"] = idx + 1
+                report_data["ground_truth_status"] = core_intel.get("ground_truth_status")
+                report_data["ground_truth_filings_news"] = core_intel.get("ground_truth_filings_news")
+                report_data["events_happenings"] = core_intel.get("events_happenings")
+                report_data["risk_score"] = core_intel.get("risk_score")
+                report_data["raw_metrics"] = core_intel.get("raw_metrics") or report_data.get("raw_metrics", {})
+                if not report_data.get("current_price") and core_intel.get("current_price"):
+                    report_data["current_price"] = core_intel.get("current_price")
+                if not report_data.get("target_price") and core_intel.get("target_price"):
+                    report_data["target_price"] = core_intel.get("target_price")
+
+                await save_smart_money_report(db, report_data, core_intel_id=core_intel.get("id"))
                 reports.append(report_data)
 
         logger.info(f"Engine 2 completed successfully: {len(reports)} reports generated.")

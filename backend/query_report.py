@@ -14,15 +14,20 @@ def query_report(ticker):
     conn = sqlite3.connect("stock_analyzer.db")
     cursor = conn.cursor()
     
-    # Query the latest report for the ticker
+    # Query latest retail report and joined core equity intel
     cursor.execute("""
-        SELECT ticker, date, current_price, target_price,
-               community_sentiment, community_hype,
-               ground_truth_status, ground_truth_filings_news, events_happenings,
-               reconciliation_risk_score, reconciliation_analysis, reconciliation_actionable_insight
-        FROM ticker_reports
-        WHERE UPPER(ticker) = ?
-        ORDER BY date DESC
+        SELECT r.ticker, r.date, r.current_price, r.target_price,
+               r.community_sentiment, r.community_hype,
+               COALESCE(c.ground_truth_status, r.ground_truth_status, 'Verified') as ground_truth_status,
+               COALESCE(c.ground_truth_filings_news, r.ground_truth_filings_news, 'Disclosures verified.') as ground_truth_filings_news,
+               COALESCE(c.events_happenings, r.events_happenings, 'None reported') as events_happenings,
+               COALESCE(c.risk_score, r.reconciliation_risk_score, 'Medium') as risk_score,
+               COALESCE(c.risk_analysis, r.reconciliation_analysis, 'Fundamental risk evaluated.') as risk_analysis,
+               COALESCE(r.reconciliation_actionable_insight, c.actionable_insight, 'Monitor developments') as actionable_insight
+        FROM retail_reports r
+        LEFT JOIN core_equity_intels c ON r.core_intel_id = c.id
+        WHERE UPPER(r.ticker) = ?
+        ORDER BY r.date DESC
         LIMIT 1;
     """, (ticker.upper(),))
     

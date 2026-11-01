@@ -28,7 +28,7 @@ export default function Home() {
 
   const fetchData = () => {
     setLoading(true);
-    fetch(`${API_BASE}/api/tickers/today`)
+    fetch(`${API_BASE}/api/retail/today`)
       .then((res) => {
         if (!res.ok) throw new Error("Failed to fetch todays tickers");
         return res.json();
@@ -50,7 +50,7 @@ export default function Home() {
   const handleTriggerRun = async () => {
     setRunning(true);
     try {
-      const res = await fetch(`${API_BASE}/api/pipeline/trigger`, { method: "POST" });
+      const res = await fetch(`${API_BASE}/api/retail/trigger`, { method: "POST" });
       if (!res.ok) throw new Error("Failed to run Retail Momentum pipeline");
       fetchData();
     } catch (err: any) {
@@ -196,7 +196,7 @@ export default function Home() {
 
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {tickers.map((t) => (
-            <Link href={`/report/${t.ticker}`} key={t.id} className="group">
+            <Link href={`/retail/${t.ticker}`} key={t.id} className="group">
               <div className="h-full bg-slate-900/40 border border-slate-800/80 hover:border-indigo-500/40 rounded-2xl p-6 hover:shadow-2xl hover:shadow-indigo-500/5 transition-all duration-300 backdrop-blur-sm hover:-translate-y-1 flex flex-col justify-between">
                 <div>
                   {/* Card Header */}
@@ -250,7 +250,7 @@ export default function Home() {
                 </div>
 
                 <div className="mt-6 flex items-center justify-between text-xs font-bold text-indigo-400 group-hover:text-indigo-300 transition-colors">
-                  <span>View Intelligence Report</span>
+                  <span>View Retail Momentum Report</span>
                   <span className="group-hover:translate-x-1 transition-transform">&rarr;</span>
                 </div>
               </div>

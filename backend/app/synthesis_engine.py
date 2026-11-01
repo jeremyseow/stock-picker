@@ -4,6 +4,7 @@ from datetime import timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.crud import (
     get_latest_smart_money_tickers,
+    get_latest_core_equity_intel,
     save_synthesis_records,
 )
 from app.models import DailyTicker, TickerReport
@@ -116,9 +117,11 @@ async def generate_cross_engine_synthesis(db: AsyncSession) -> List[Dict[str, An
             diagnosis = "Routine market discussion without significant smart money convergence."
 
         timing_edge, awareness = calculate_timing_edge(mentions, conviction, archetype)
+        core_intel = await get_latest_core_equity_intel(db, ticker)
 
         synthesis_results.append({
             "ticker": ticker,
+            "core_intel_id": core_intel.id if core_intel else None,
             "archetype": archetype,
             "retail_rank": e1_data.get("rank"),
             "retail_mentions": mentions,
