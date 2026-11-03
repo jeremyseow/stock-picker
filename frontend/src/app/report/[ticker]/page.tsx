@@ -5,6 +5,7 @@ import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import SmartMoneyRadar, { RawInsiderData } from "@/components/SmartMoneyRadar";
 import ContrarianPlaybook from "@/components/ContrarianPlaybook";
+import OptionsFlowCard from "@/components/OptionsFlowCard";
 import { API_BASE } from "@/lib/api";
 
 interface RawMetrics {
@@ -108,6 +109,7 @@ interface MasterReport {
 export default function ReportPage({ params }: { params: Promise<{ ticker: string }> }) {
   const { ticker } = use(params);
   const [report, setReport] = useState<MasterReport | null>(null);
+  const [optionsData, setOptionsData] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -147,6 +149,11 @@ export default function ReportPage({ params }: { params: Promise<{ ticker: strin
         setError(err.message);
         setLoading(false);
       });
+
+    fetch(`${API_BASE}/api/options/report/${ticker}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((opt) => setOptionsData(opt))
+      .catch(() => {});
   }, [ticker]);
 
   if (loading) {
@@ -616,7 +623,25 @@ export default function ReportPage({ params }: { params: Promise<{ ticker: strin
           )}
         </div>
 
-        {/* SECTION 4: FINANCIAL RATIOS & NEWS */}
+        {/* SECTION 4: INSTITUTIONAL WHALE OPTIONS RADAR */}
+        <div className="mb-10">
+          <div className="flex items-center gap-2 mb-4">
+            <span className="text-xs font-bold uppercase tracking-wider text-purple-400">Section 4</span>
+            <h2 className="text-xl font-black text-white tracking-tight">Institutional Whale Options Radar</h2>
+          </div>
+          <OptionsFlowCard
+            ticker={report.ticker}
+            whaleScore={optionsData?.whale_score ?? 0}
+            unusualOiMultiplier={optionsData?.unusual_oi_multiplier ?? 1.0}
+            putCallRatio={optionsData?.put_call_ratio ?? 1.0}
+            netBullishPremium={optionsData?.net_bullish_premium ?? 0}
+            sentimentBias={optionsData?.sentiment_bias ?? "Neutral Tape"}
+            topStrikeSummary={optionsData?.top_strike_summary}
+            unusualContracts={optionsData?.unusual_contracts ?? []}
+          />
+        </div>
+
+        {/* SECTION 5: FINANCIAL RATIOS & NEWS */}
         <div className="grid gap-6 md:grid-cols-2 mb-10">
           {/* Key Financial Metrics */}
           <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-6 backdrop-blur-sm">

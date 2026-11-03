@@ -4,10 +4,12 @@ from datetime import timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.crud import (
     get_latest_smart_money_tickers,
+    get_latest_options_whale_tickers,
     get_latest_core_equity_intel,
     save_synthesis_records,
 )
-from app.models import DailyTicker, TickerReport
+from app.models import DailyTicker, TickerReport, OptionsWhaleTicker
+from app.scoring_weights import get_synthesis_weights
 from sqlalchemy.future import select
 from sqlalchemy import func, desc
 
@@ -16,14 +18,20 @@ logger = logging.getLogger(__name__)
 
 def calculate_timing_edge(retail_mentions: int, conviction_score: float, archetype: str = "Silent Accumulation") -> tuple[float, str]:
     """Calculates timing edge score (0-100) and retail awareness level."""
+    sw = get_synthesis_weights()
+    stealth_base = float(sw.get("stealth_timing_edge_base", 95.0))
+    decay_mult = float(sw.get("retail_decay_multiplier", 2.0))
+    rocket_edge = float(sw.get("rocket_timing_edge", 50.0))
+    trap_edge = float(sw.get("retail_trap_timing_edge", 15.0))
+
     if archetype == "Silent Accumulation":
         if retail_mentions == 0:
-            return 95.0, "Zero Awareness (Stealth)"
-        return max(85.0 - retail_mentions * 2, 70.0), "Early Discovery"
+            return stealth_base, "Zero Awareness (Stealth)"
+        return max(85.0 - retail_mentions * decay_mult, 70.0), "Early Discovery"
     elif archetype == "The Rocket":
-        return 50.0, "High Awareness"
+        return rocket_edge, "High Awareness"
     elif archetype == "The Retail Trap":
-        return 15.0, "Saturated Hype"
+        return trap_edge, "Saturated Hype"
     else:  # Market Noise
         return 30.0, "Emerging"
 
@@ -72,52 +80,92 @@ async def generate_cross_engine_synthesis(db: AsyncSession) -> List[Dict[str, An
             "buyer_summary": sm.top_buyer_summary,
         }
 
-    all_symbols = set(e1_tickers.keys()) | set(e2_tickers.keys())
+    # 3. Fetch latest Engine 3 (Whale Options) tickers
+    e3_tickers_list = await get_latest_options_whale_tickers(db)
+    e3_tickers = {}
+    for ow in e3_tickers_list:
+        e3_tickers[ow.ticker.upper()] = {
+            "rank": ow.rank,
+            "whale_score": ow.whale_score,
+            "unusual_oi": ow.unusual_oi_multiplier,
+            "pc_ratio": ow.put_call_ratio,
+            "top_strike": ow.top_strike_summary,
+        }
+
+    all_symbols = set(e1_tickers.keys()) | set(e2_tickers.keys()) | set(e3_tickers.keys())
     synthesis_results = []
 
     for ticker in all_symbols:
         e1_data = e1_tickers.get(ticker, {})
         e1_rep = e1_reports.get(ticker, {})
         e2_data = e2_tickers.get(ticker, {})
+        e3_data = e3_tickers.get(ticker, {})
 
         mentions = e1_data.get("mentions", 0)
         sentiment = e1_rep.get("sentiment", "Unmonitored")
         conviction = e2_data.get("conviction", 0.0)
+        whale_score = e3_data.get("whale_score", 0.0)
+        pc_ratio = e3_data.get("pc_ratio", 1.0)
         e1_verdict = (e1_rep.get("smart_money_verdict") or "").lower()
 
-        # Classify Archetype
+        # Classify Signals
         is_high_retail = mentions >= 10 or e1_data.get("rank") is not None
         is_high_smart_money = conviction >= 20.0 or e2_data.get("cluster_count", 0) >= 2
+        is_whale_bullish = whale_score >= 40.0 and pc_ratio <= 0.65
+        is_whale_bearish = pc_ratio >= 1.5 and whale_score >= 25.0
         is_insider_selling = "selling" in e1_verdict or "divergence" in e1_verdict
 
-        if is_high_retail and is_insider_selling:
+        # Triangulation Archetype Classification
+        if is_high_retail and (is_insider_selling or is_whale_bearish):
             archetype = "The Retail Trap"
             action = "AVOID/SHORT"
+            trap_reasons = []
+            if is_insider_selling:
+                trap_reasons.append("insider selling")
+            if is_whale_bearish:
+                trap_reasons.append(f"bearish whale put skew (P/C {pc_ratio:.2f})")
             diagnosis = (
-                f"Retail sentiment is high ({mentions} mentions), but SEC disclosures indicate insider selling "
-                "or lack of executive conviction. Retail is acting as exit liquidity."
+                f"Retail hype is elevated ({mentions} mentions), but institutional flow indicates "
+                f"{' and '.join(trap_reasons)}. High risk of retail acting as exit liquidity."
             )
-        elif is_high_retail and is_high_smart_money:
+        elif not is_high_retail and is_high_smart_money and is_whale_bullish:
+            archetype = "Silent Accumulation"
+            action = "STRONG STEALTH BUY"
+            diagnosis = (
+                f"Institutional Triangulation confirmed: Form 4 insiders and aggressive options whale sweeps "
+                f"(Score: {whale_score:.1f}) are quietly accumulating while Reddit attention is near zero ({mentions} mentions)."
+            )
+        elif not is_high_retail and (is_high_smart_money or is_whale_bullish):
+            archetype = "Silent Accumulation"
+            action = "EARLY SWING BUY"
+            source = "options whale call sweeps" if is_whale_bullish else "smart money insider buying"
+            diagnosis = (
+                f"High-conviction {source} (Score: {max(conviction, whale_score):.1f}) with near-zero Reddit attention "
+                f"({mentions} mentions). Asymmetric pre-catalyst timing edge."
+            )
+        elif is_high_retail and (is_high_smart_money or is_whale_bullish):
             archetype = "The Rocket"
             action = "STRONG BUY"
             diagnosis = (
-                f"Full Alignment detected: Retail momentum ({mentions} mentions) is supported by "
-                f"genuine insider/political conviction (Score: {conviction:.1f})."
-            )
-        elif not is_high_retail and is_high_smart_money:
-            archetype = "Silent Accumulation"
-            action = "EARLY SWING BUY"
-            diagnosis = (
-                f"High-conviction smart money accumulation (Score: {conviction:.1f}) with near-zero Reddit attention "
-                f"({mentions} mentions). Maximum asymmetric pre-catalyst timing edge."
+                f"Full Alignment detected: Retail momentum ({mentions} mentions) is validated by institutional "
+                f"conviction (Insider Conviction: {conviction:.1f}, Whale Score: {whale_score:.1f})."
             )
         else:
             archetype = "Market Noise"
             action = "PASS"
-            diagnosis = "Routine market discussion without significant smart money convergence."
+            diagnosis = "Routine market chatter without significant insider or options whale convergence."
 
-        timing_edge, awareness = calculate_timing_edge(mentions, conviction, archetype)
+        timing_edge, awareness = calculate_timing_edge(mentions, max(conviction, whale_score), archetype)
         core_intel = await get_latest_core_equity_intel(db, ticker)
+
+        whale_flow_label = None
+        if e3_data:
+            if is_whale_bullish:
+                whale_flow_label = f"Bullish Call Sweeps ({e3_data.get('top_strike', '')})"
+            elif is_whale_bearish:
+                whale_flow_label = f"Bearish Put Skew (P/C {pc_ratio:.2f})"
+            else:
+                whale_flow_label = "Neutral Options Tape"
 
         synthesis_results.append({
             "ticker": ticker,
@@ -133,6 +181,9 @@ async def generate_cross_engine_synthesis(db: AsyncSession) -> List[Dict[str, An
             "timing_edge_score": timing_edge,
             "synthesis_diagnosis": diagnosis,
             "recommended_action": action,
+            "whale_options_flow": whale_flow_label,
+            "whale_options_score": whale_score,
+            "put_call_ratio": pc_ratio if e3_data else None,
         })
 
     # Sort by timing edge descending

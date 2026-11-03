@@ -12,6 +12,9 @@ from app.models import (
     SmartMoneyTicker,
     SmartMoneyReport,
     SynthesisRecord,
+    OptionsWhaleTicker,
+    OptionsWhaleReport,
+    ModelCalibrationRun,
 )
 from app.llm_schemas import StockReport, TrajectoryAnalysis
 
@@ -130,17 +133,24 @@ async def save_ticker_report(
 async def get_distinct_report_dates(db: AsyncSession) -> list[str]:
     """
     Returns a sorted list of unique report dates formatted as YYYY-MM-DD in descending order
-    aggregated across Retail, Smart Money, and Synthesis datasets.
+    aggregated across Retail, Smart Money, Options Whale, and Synthesis datasets.
     """
     d1 = select(func.date(RetailReport.date)).distinct()
     d2 = select(func.date(SmartMoneyReport.date)).distinct()
     d3 = select(func.date(SynthesisRecord.date)).distinct()
+    d4 = select(func.date(OptionsWhaleReport.date)).distinct()
 
     res1 = (await db.execute(d1)).scalars().all()
     res2 = (await db.execute(d2)).scalars().all()
     res3 = (await db.execute(d3)).scalars().all()
+    res4 = (await db.execute(d4)).scalars().all()
 
-    all_dates = set([str(d) for d in res1 if d] + [str(d) for d in res2 if d] + [str(d) for d in res3 if d])
+    all_dates = set(
+        [str(d) for d in res1 if d]
+        + [str(d) for d in res2 if d]
+        + [str(d) for d in res3 if d]
+        + [str(d) for d in res4 if d]
+    )
     return sorted(list(all_dates), reverse=True)
 
 
@@ -438,7 +448,10 @@ async def save_synthesis_records(db: AsyncSession, records: list[dict]) -> list[
             retail_awareness_level=item.get("retail_awareness_level", "Zero Awareness (Stealth)"),
             timing_edge_score=item.get("timing_edge_score", 0.0),
             synthesis_diagnosis=item.get("synthesis_diagnosis", ""),
-            recommended_action=item.get("recommended_action", "PASS")
+            recommended_action=item.get("recommended_action", "PASS"),
+            whale_options_flow=item.get("whale_options_flow"),
+            whale_options_score=item.get("whale_options_score", 0.0),
+            put_call_ratio=item.get("put_call_ratio"),
         )
         db.add(row)
         saved.append(row)
@@ -519,3 +532,159 @@ async def get_ticker_archetype_history(db: AsyncSession, ticker: str) -> list[Sy
     )
     result = await db.execute(query)
     return list(result.scalars().all())
+
+
+# ==========================================
+# Engine 3: Institutional Whale Options CRUD
+# ==========================================
+
+async def save_options_whale_tickers(db: AsyncSession, candidates: list[dict]) -> list[OptionsWhaleTicker]:
+    """Save the top-ranked options whale candidates from Engine 3."""
+    saved = []
+    for idx, item in enumerate(candidates):
+        row = OptionsWhaleTicker(
+            ticker=item["ticker"].upper(),
+            rank=idx + 1,
+            whale_score=item.get("whale_score", 0.0),
+            unusual_oi_multiplier=item.get("unusual_oi_multiplier", 1.0),
+            net_bullish_premium=item.get("net_bullish_premium", 0.0),
+            put_call_ratio=item.get("put_call_ratio", 1.0),
+            top_strike_summary=item.get("top_strike_summary", "")
+        )
+        db.add(row)
+        saved.append(row)
+    await db.commit()
+    return saved
+
+
+async def get_latest_options_whale_tickers(db: AsyncSession) -> list[OptionsWhaleTicker]:
+    """Retrieve the most recent run's options whale tickers."""
+    latest_ts_query = select(func.max(OptionsWhaleTicker.date))
+    latest_ts_res = await db.execute(latest_ts_query)
+    latest_ts = latest_ts_res.scalar_one_or_none()
+    if not latest_ts:
+        return []
+
+    query = (
+        select(OptionsWhaleTicker)
+        .where(OptionsWhaleTicker.date >= latest_ts - timedelta(seconds=15))
+        .order_by(OptionsWhaleTicker.rank.asc())
+    )
+    result = await db.execute(query)
+    return list(result.scalars().all())
+
+
+async def save_options_whale_report(
+    db: AsyncSession,
+    ticker: str,
+    whale_data: dict,
+    core_intel_id: int | None = None,
+    rank: int | None = None,
+) -> OptionsWhaleReport:
+    """Save an individual Engine 3 Options Whale report linked to Core Equity Intel."""
+    sym = ticker.upper()
+    core_intel = None
+    if core_intel_id:
+        core_intel = await get_core_equity_intel_by_id(db, core_intel_id)
+    if not core_intel:
+        core_intel = await get_latest_core_equity_intel(db, sym)
+
+    c_name = core_intel.company_name if core_intel else sym
+    sec = core_intel.sector if core_intel else None
+    ind = core_intel.industry if core_intel else None
+    curr_p = whale_data.get("current_price") or (core_intel.current_price if core_intel else None)
+    targ_p = core_intel.target_price if core_intel else None
+
+    report = OptionsWhaleReport(
+        ticker=sym,
+        core_intel_id=core_intel.id if core_intel else core_intel_id,
+        company_name=c_name,
+        sector=sec,
+        industry=ind,
+        current_price=curr_p,
+        target_price=targ_p,
+        rank=rank,
+        whale_score=whale_data.get("whale_score", 0.0),
+        unusual_oi_multiplier=whale_data.get("unusual_oi_multiplier", 1.0),
+        put_call_ratio=whale_data.get("put_call_ratio", 1.0),
+        net_bullish_premium=whale_data.get("net_bullish_premium", 0.0),
+        sentiment_bias=whale_data.get("sentiment_bias", "Neutral Tape"),
+        top_strike_summary=whale_data.get("top_strike_summary", ""),
+        unusual_contracts=whale_data.get("unusual_contracts", []),
+        ground_truth_status=core_intel.ground_truth_status if core_intel else "Objective financial evaluation.",
+        ground_truth_filings_news=core_intel.ground_truth_filings_news if core_intel else None,
+        events_happenings=core_intel.events_happenings if core_intel else None,
+        risk_score=core_intel.risk_score if core_intel else "Medium",
+        raw_metrics=core_intel.raw_metrics if core_intel else {},
+    )
+    db.add(report)
+    await db.commit()
+    await db.refresh(report)
+    return report
+
+
+async def get_latest_options_whale_report(db: AsyncSession, ticker: str) -> OptionsWhaleReport | None:
+    """Fetch the latest Options Whale report for a ticker."""
+    query = (
+        select(OptionsWhaleReport)
+        .where(OptionsWhaleReport.ticker == ticker.upper())
+        .order_by(desc(OptionsWhaleReport.date))
+        .limit(1)
+    )
+    result = await db.execute(query)
+    return result.scalar_one_or_none()
+
+
+async def get_options_reports_by_date(db: AsyncSession, date_str: str) -> list[OptionsWhaleReport]:
+    """Retrieve all Options Whale reports for a specific date (YYYY-MM-DD)."""
+    query = (
+        select(OptionsWhaleReport)
+        .where(func.date(OptionsWhaleReport.date) == date_str)
+        .order_by(OptionsWhaleReport.rank.asc(), desc(OptionsWhaleReport.whale_score))
+    )
+    result = await db.execute(query)
+    return list(result.scalars().all())
+
+
+# ==========================================
+# Model Calibration & Backtest CRUD
+# ==========================================
+
+async def save_model_calibration_run(
+    db: AsyncSession,
+    sample_runs_count: int,
+    overall_hit_rate_t30: float,
+    avg_alpha_vs_spy_t30: float,
+    max_drawdown: float,
+    archetype_scorecard: dict,
+    active_weights: dict,
+    recommended_weights: dict,
+    is_applied: int = 0
+) -> ModelCalibrationRun:
+    """Save a model calibration scorecard evaluation and weights run."""
+    run = ModelCalibrationRun(
+        sample_runs_count=sample_runs_count,
+        overall_hit_rate_t30=overall_hit_rate_t30,
+        avg_alpha_vs_spy_t30=avg_alpha_vs_spy_t30,
+        max_drawdown=max_drawdown,
+        archetype_scorecard=archetype_scorecard,
+        active_weights=active_weights,
+        recommended_weights=recommended_weights,
+        is_applied=is_applied
+    )
+    db.add(run)
+    await db.commit()
+    await db.refresh(run)
+    return run
+
+
+async def get_latest_model_calibration_run(db: AsyncSession) -> ModelCalibrationRun | None:
+    """Retrieve the most recent calibration scorecard evaluation."""
+    query = (
+        select(ModelCalibrationRun)
+        .order_by(desc(ModelCalibrationRun.date))
+        .limit(1)
+    )
+    result = await db.execute(query)
+    return result.scalar_one_or_none()
+

@@ -3,13 +3,14 @@ from zoneinfo import ZoneInfo
 import logging
 from app.pipeline import run_analysis_pipeline
 from app.smart_money_pipeline import run_smart_money_pipeline
+from app.options_pipeline import run_options_pipeline
 from app.synthesis_engine import generate_cross_engine_synthesis
 from app.database import AsyncSessionLocal
 
 logger = logging.getLogger(__name__)
 
 async def daily_pipeline_job():
-    logger.info("Starting scheduled daily Dual-Engine market intelligence pipeline...")
+    logger.info("Starting scheduled daily Multi-Engine market intelligence pipeline...")
     try:
         logger.info("Executing Engine 1: Retail Momentum...")
         await run_analysis_pipeline()
@@ -17,11 +18,14 @@ async def daily_pipeline_job():
         logger.info("Executing Engine 2: Smart Money & Political Scout...")
         await run_smart_money_pipeline()
 
+        logger.info("Executing Engine 3: Institutional Whale Options Radar...")
+        await run_options_pipeline()
+
         logger.info("Executing Cross-Engine Synthesis Hub...")
         async with AsyncSessionLocal() as db:
             await generate_cross_engine_synthesis(db)
 
-        logger.info("Scheduled daily dual-engine pipeline completed successfully.")
+        logger.info("Scheduled daily multi-engine pipeline completed successfully.")
     except Exception as e:
         logger.error(f"Error running scheduled daily pipeline job: {e}")
 

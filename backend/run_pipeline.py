@@ -10,6 +10,7 @@ if str(backend_dir) not in sys.path:
 
 from app.pipeline import run_analysis_pipeline
 from app.smart_money_pipeline import run_smart_money_pipeline
+from app.options_pipeline import run_options_pipeline
 from app.synthesis_engine import generate_cross_engine_synthesis
 from app.database import AsyncSessionLocal
 
@@ -18,13 +19,16 @@ logger = logging.getLogger("run_pipeline")
 
 
 async def main():
-    logger.info("=== [Step 1/3: Engine 1 (Retail Momentum)] Starting... ===")
+    logger.info("=== [Step 1/4: Engine 1 (Retail Momentum)] Starting... ===")
     await run_analysis_pipeline()
 
-    logger.info("=== [Step 2/3: Engine 2 (Smart Money Scout)] Starting... ===")
+    logger.info("=== [Step 2/4: Engine 2 (Smart Money Scout)] Starting... ===")
     await run_smart_money_pipeline(limit=5)
 
-    logger.info("=== [Step 3/3: Cross-Engine Synthesis Matrix] Correlating signals... ===")
+    logger.info("=== [Step 3/4: Engine 3 (Whale Options Radar)] Starting... ===")
+    await run_options_pipeline(limit=5)
+
+    logger.info("=== [Step 4/4: Triangulation Synthesis Matrix] Correlating signals... ===")
     async with AsyncSessionLocal() as db:
         await generate_cross_engine_synthesis(db)
 

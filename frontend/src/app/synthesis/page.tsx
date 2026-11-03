@@ -20,6 +20,8 @@ interface SynthesisRecord {
   timing_edge_score: number;
   synthesis_diagnosis: string;
   recommended_action: string;
+  whale_options_flow?: string | null;
+  whale_options_score?: number;
 }
 
 export default function SynthesisPage() {

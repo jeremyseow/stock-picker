@@ -22,3 +22,17 @@ async def init_db():
     async with engine.begin() as conn:
         # Create tables
         await conn.run_sync(Base.metadata.create_all)
+
+        # Self-healing column migrations for existing SQLite tables
+        def migrate_columns(sync_conn):
+            rows = sync_conn.exec_driver_sql("PRAGMA table_info(synthesis_records)").fetchall()
+            existing_cols = {r[1] for r in rows}
+
+            if "whale_options_flow" not in existing_cols:
+                sync_conn.exec_driver_sql("ALTER TABLE synthesis_records ADD COLUMN whale_options_flow VARCHAR")
+            if "whale_options_score" not in existing_cols:
+                sync_conn.exec_driver_sql("ALTER TABLE synthesis_records ADD COLUMN whale_options_score FLOAT DEFAULT 0.0")
+            if "put_call_ratio" not in existing_cols:
+                sync_conn.exec_driver_sql("ALTER TABLE synthesis_records ADD COLUMN put_call_ratio FLOAT")
+
+        await conn.run_sync(migrate_columns)

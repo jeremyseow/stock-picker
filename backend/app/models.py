@@ -175,3 +175,76 @@ class SynthesisRecord(Base):
     timing_edge_score = Column(Float)        # 0.0 to 100.0
     synthesis_diagnosis = Column(String)
     recommended_action = Column(String)     # STRONG BUY, AVOID/SHORT, EARLY SWING BUY, PASS
+
+    # Engine 3 options flow signals (nullable for backward compatibility)
+    whale_options_flow = Column(String, nullable=True)
+    whale_options_score = Column(Float, default=0.0)
+    put_call_ratio = Column(Float, nullable=True)
+
+
+class OptionsWhaleTicker(Base):
+    """Represents a top-ranked ticker identified by Engine 3 (Institutional Whale Options Radar)."""
+    __tablename__ = "options_whale_tickers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    date = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    ticker = Column(String, index=True)
+    rank = Column(Integer)
+    whale_score = Column(Float)
+    unusual_oi_multiplier = Column(Float)
+    net_bullish_premium = Column(Float, default=0.0)
+    put_call_ratio = Column(Float, default=1.0)
+    top_strike_summary = Column(String, nullable=True)
+
+
+class OptionsWhaleReport(Base):
+    """
+    Engine 3 specialized overlay: Unusual volume-to-open-interest options sweeps, 
+    put/call skews, and institutional sentiment.
+    Links to CoreEquityIntel for fundamental grounding.
+    """
+    __tablename__ = "options_whale_reports"
+
+    id = Column(Integer, primary_key=True, index=True)
+    ticker = Column(String, index=True)
+    date = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    core_intel_id = Column(Integer, ForeignKey("core_equity_intels.id"), nullable=True, index=True)
+
+    company_name = Column(String, nullable=True)
+    sector = Column(String, nullable=True)
+    industry = Column(String, nullable=True)
+    current_price = Column(Float, nullable=True)
+    target_price = Column(Float, nullable=True)
+
+    rank = Column(Integer, nullable=True)
+    whale_score = Column(Float, default=0.0)
+    unusual_oi_multiplier = Column(Float, default=1.0)
+    put_call_ratio = Column(Float, default=1.0)
+    net_bullish_premium = Column(Float, default=0.0)
+    sentiment_bias = Column(String, nullable=True)  # "Extremely Bullish", "Bullish Sweeps", "Cautious / Put Skew"
+    top_strike_summary = Column(String, nullable=True)
+    unusual_contracts = Column(JSON, nullable=True)
+
+    # Denormalized convenience fields populated from CoreEquityIntel
+    ground_truth_status = Column(String, nullable=True)
+    ground_truth_filings_news = Column(String, nullable=True)
+    events_happenings = Column(String, nullable=True)
+    risk_score = Column(String, nullable=True)
+    raw_metrics = Column(JSON, nullable=True)
+
+
+class ModelCalibrationRun(Base):
+    """Stores historical backtest scorecards and timestamped weight calibrations."""
+    __tablename__ = "model_calibration_runs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    date = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    sample_runs_count = Column(Integer, default=0)
+    overall_hit_rate_t30 = Column(Float, default=0.0)
+    avg_alpha_vs_spy_t30 = Column(Float, default=0.0)
+    max_drawdown = Column(Float, default=0.0)
+    archetype_scorecard = Column(JSON, nullable=True)
+    active_weights = Column(JSON, nullable=False)
+    recommended_weights = Column(JSON, nullable=True)
+    is_applied = Column(Integer, default=0)  # 1 if applied to active configuration
+

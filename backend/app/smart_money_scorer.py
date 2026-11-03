@@ -2,6 +2,7 @@ import logging
 from collections import defaultdict
 from typing import List, Dict, Any
 from app.market_researcher import is_valid_ticker
+from app.scoring_weights import get_smart_money_weights
 
 logger = logging.getLogger(__name__)
 
@@ -20,22 +21,24 @@ COMMITTEE_SECTOR_MAP = {
 
 def get_role_weight(title: str) -> float:
     """Returns weight based on insider seniority hierarchy."""
+    w = get_smart_money_weights()
     if not title:
-        return 1.0
+        return float(w.get("officer_weight", 1.0))
     t = title.upper()
     if any(k in t for k in ["CEO", "CHIEF EXECUTIVE", "CFO", "CHIEF FINANCIAL", "COO", "CHAIRMAN", "PRESIDENT"]):
-        return 3.0
+        return float(w.get("c_suite_weight", 3.0))
     if any(k in t for k in ["DIR", "DIRECTOR", "10%", "BENEFICIAL"]):
-        return 2.0
-    return 1.0
+        return float(w.get("director_weight", 2.0))
+    return float(w.get("officer_weight", 1.0))
 
 
 def get_cluster_multiplier(unique_insiders_count: int) -> float:
     """Multiplies conviction when multiple distinct insiders buy together."""
+    w = get_smart_money_weights()
     if unique_insiders_count >= 3:
-        return 2.5
+        return float(w.get("cluster_3_plus_multiplier", 2.5))
     if unique_insiders_count == 2:
-        return 1.5
+        return float(w.get("cluster_2_multiplier", 1.5))
     return 1.0
 
 
@@ -57,8 +60,11 @@ def score_insider_trades(trades: List[Dict[str, Any]]) -> Dict[str, Dict[str, An
         max_delta = max((t["delta_own"] for t in t_list if t.get("delta_own")), default=0.0)
         growth_factor = 1.0 + min(max_delta, 2.0)  # Capped at 3.0x
 
-        # Normalize dollar value (every $50k is 1 base point, capped at 50 points)
-        val_points = min(total_val / 50000.0, 50.0)
+        w = get_smart_money_weights()
+        divisor = float(w.get("dollar_vol_divisor", 50000.0))
+        cap_pts = float(w.get("dollar_vol_cap_points", 50.0))
+        # Normalize dollar value
+        val_points = min(total_val / divisor, cap_pts)
         insider_score = round(val_points * max_role * cluster_mult * growth_factor, 2)
 
         buyer_titles = [f"{t['insider_name']} ({t['title']})" for t in t_list[:3]]
@@ -99,8 +105,8 @@ def score_congressional_trades(trades: List[Dict[str, Any]]) -> Dict[str, Dict[s
             elif any(k in amt for k in ["$50k", "$100k", "$100,001", "$50,001"]):
                 base = 20.0
 
-            # Default committee multiplier: 1.5x (can be boosted during full research)
-            comm_mult = 1.5
+            # Default committee multiplier: scaled by weights
+            comm_mult = float(get_smart_money_weights().get("committee_match_multiplier", 3.0)) / 2.0
             pol_score += base * comm_mult
             details.append(f"{t.get('politician', 'Member')} ({amt})")
 

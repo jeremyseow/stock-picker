@@ -25,14 +25,21 @@ from app.crud import (
     get_ticker_archetype_history,
     get_latest_core_equity_intel,
     get_latest_retail_report,
+    get_latest_options_whale_tickers,
+    get_latest_options_whale_report,
+    get_options_reports_by_date,
+    get_latest_model_calibration_run,
 )
+from app.options_pipeline import run_options_pipeline
+from app.backtest_engine import run_walk_forward_backtest
+from app.scoring_weights import get_active_weights, update_active_weights
 from app.pipeline import run_analysis_pipeline
 from app.smart_money_pipeline import run_smart_money_pipeline
 from app.smart_money_researcher import get_historical_trade_price
 from app.synthesis_engine import generate_cross_engine_synthesis
 from app.agent import generate_trajectory_analysis
 from app.ticker_extractor import TICKER_ALIASES
-from datetime import timedelta
+from datetime import datetime, timezone, timedelta
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -738,4 +745,142 @@ async def trigger_smart_money_run():
         "status": "success",
         "smart_money_reports_count": len(reports),
     }
+
+
+# ==========================================
+# Engine 3: Institutional Whale Options Endpoints
+# ==========================================
+
+@app.get("/api/options/today")
+async def get_options_today(db: AsyncSession = Depends(get_db)):
+    """Returns the top ranked options whale tickers from the latest run."""
+    tickers = await get_latest_options_whale_tickers(db)
+    return [
+        {
+            "id": t.id,
+            "ticker": t.ticker,
+            "rank": t.rank,
+            "date": t.date.isoformat(),
+            "whale_score": t.whale_score,
+            "unusual_oi_multiplier": t.unusual_oi_multiplier,
+            "net_bullish_premium": t.net_bullish_premium,
+            "put_call_ratio": t.put_call_ratio,
+            "top_strike_summary": t.top_strike_summary,
+        }
+        for t in tickers
+    ]
+
+
+@app.get("/api/options/reports")
+async def get_options_reports(date: str = Query(..., description="Target date in YYYY-MM-DD format"), db: AsyncSession = Depends(get_db)):
+    """Returns options whale reports generated on a specific historical date."""
+    reports = await get_options_reports_by_date(db, date)
+    return [
+        {
+            "id": r.id,
+            "ticker": r.ticker,
+            "company_name": r.company_name,
+            "sector": r.sector,
+            "industry": r.industry,
+            "current_price": r.current_price,
+            "target_price": r.target_price,
+            "date": r.date.isoformat(),
+            "rank": r.rank,
+            "whale_score": r.whale_score,
+            "unusual_oi_multiplier": r.unusual_oi_multiplier,
+            "put_call_ratio": r.put_call_ratio,
+            "net_bullish_premium": r.net_bullish_premium,
+            "sentiment_bias": r.sentiment_bias,
+            "top_strike_summary": r.top_strike_summary,
+            "unusual_contracts": r.unusual_contracts or [],
+            "ground_truth_status": r.ground_truth_status,
+            "risk_score": r.risk_score,
+        }
+        for r in reports
+    ]
+
+
+@app.get("/api/options/report/{ticker}")
+async def get_individual_options_report(ticker: str, db: AsyncSession = Depends(get_db)):
+    """Returns the detailed options flow report for a specific ticker."""
+    rep = await get_latest_options_whale_report(db, ticker)
+    core = await get_latest_core_equity_intel(db, ticker)
+
+    if not rep and not core:
+        raise HTTPException(status_code=404, detail=f"No options flow data found for ${ticker.upper()}")
+
+    curr_p = (rep.current_price if rep else None) or (core.current_price if core else None)
+    targ_p = (rep.target_price if rep else None) or (core.target_price if core else None)
+
+    return {
+        "ticker": ticker.upper(),
+        "company_name": (rep.company_name if rep else None) or (core.company_name if core else ticker.upper()),
+        "sector": (rep.sector if rep else None) or (core.sector if core else None),
+        "industry": (rep.industry if rep else None) or (core.industry if core else None),
+        "current_price": curr_p,
+        "target_price": targ_p,
+        "date": rep.date.isoformat() if rep else (core.date.isoformat() if core else None),
+        "rank": rep.rank if rep else None,
+        "whale_score": rep.whale_score if rep else 0.0,
+        "unusual_oi_multiplier": rep.unusual_oi_multiplier if rep else 1.0,
+        "put_call_ratio": rep.put_call_ratio if rep else 1.0,
+        "net_bullish_premium": rep.net_bullish_premium if rep else 0.0,
+        "sentiment_bias": rep.sentiment_bias if rep else "Neutral Tape",
+        "top_strike_summary": rep.top_strike_summary if rep else "Standard options volume",
+        "unusual_contracts": rep.unusual_contracts if rep else [],
+        "ground_truth_status": (rep.ground_truth_status if rep else None) or (core.ground_truth_status if core else None),
+        "ground_truth_filings_news": (rep.ground_truth_filings_news if rep else None) or (core.ground_truth_filings_news if core else None),
+        "events_happenings": (rep.events_happenings if rep else None) or (core.events_happenings if core else None),
+        "risk_score": (rep.risk_score if rep else None) or (core.risk_score if core else "Medium"),
+        "raw_metrics": (rep.raw_metrics if rep else None) or (core.raw_metrics if core else {}),
+    }
+
+
+@app.post("/api/options/trigger")
+async def trigger_options_run():
+    """Triggers an on-demand execution of Engine 3 and refreshes Cross-Engine Synthesis."""
+    logger.info("Manual trigger received for Engine 3 (Whale Options Radar)...")
+    reports = await run_options_pipeline(limit=5)
+    try:
+        async with AsyncSessionLocal() as db:
+            await generate_cross_engine_synthesis(db)
+    except Exception as e:
+        logger.warning(f"Could not refresh cross-engine synthesis after Engine 3: {e}")
+    return {
+        "status": "success",
+        "options_reports_count": len(reports),
+    }
+
+
+# ==========================================
+# Model Calibration & Backtesting Endpoints
+# ==========================================
+
+@app.get("/api/calibration/scorecard")
+async def get_calibration_scorecard(db: AsyncSession = Depends(get_db)):
+    """Returns the performance scorecard, active weights, and recommended calibrated weights."""
+    scorecard = await run_walk_forward_backtest(db)
+    return scorecard
+
+
+@app.post("/api/calibration/apply-weights")
+async def apply_calibrated_weights(payload: dict = None, db: AsyncSession = Depends(get_db)):
+    """
+    Applies recommended or submitted calibrated weights to production configuration.
+    """
+    if payload and "weights" in payload:
+        new_w = payload["weights"]
+    else:
+        # Run backtest to compute latest recommended weights
+        backtest_res = await run_walk_forward_backtest(db)
+        new_w = backtest_res["recommended_weights"]
+
+    updated = update_active_weights(new_w)
+    return {
+        "status": "success",
+        "message": "Calibrated parameter weights successfully applied to production.",
+        "active_weights": updated,
+        "applied_at": datetime.now(timezone.utc).isoformat(),
+    }
+
 
