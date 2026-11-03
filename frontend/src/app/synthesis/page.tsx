@@ -22,6 +22,7 @@ interface SynthesisRecord {
   recommended_action: string;
   whale_options_flow?: string | null;
   whale_options_score?: number;
+  put_call_ratio?: number | null;
 }
 
 export default function SynthesisPage() {
@@ -199,8 +200,8 @@ export default function SynthesisPage() {
                 {r.synthesis_diagnosis}
               </div>
 
-              {/* Two Column Engine Comparison */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+              {/* Multi-Engine Signal Comparison */}
+              <div className={`grid grid-cols-1 ${r.whale_options_flow ? "md:grid-cols-3" : "md:grid-cols-2"} gap-4 text-xs`}>
                 {/* Engine 1: Retail View */}
                 <div className="p-3.5 rounded-xl bg-slate-950/40 border border-slate-800/40">
                   <div className="flex items-center justify-between mb-2">
@@ -236,6 +237,32 @@ export default function SynthesisPage() {
                     <p className="truncate"><span className="text-slate-500">Flow:</span> {r.smart_money_flow || "Neutral"}</p>
                   </div>
                 </div>
+
+                {/* Engine 3: Whale Options View */}
+                {r.whale_options_flow && (
+                  <div className="p-3.5 rounded-xl bg-slate-950/40 border border-slate-800/40">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-bold text-cyan-400 flex items-center gap-1.5">
+                        <span>🐳</span> Engine 3: Whale Options
+                      </span>
+                      {r.whale_options_score !== undefined && r.whale_options_score > 0 && (
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-cyan-400 font-semibold">
+                          Score: {r.whale_options_score.toFixed(0)}
+                        </span>
+                      )}
+                    </div>
+                    <div className="space-y-1 text-slate-300">
+                      <p className="truncate">
+                        <span className="text-slate-500">Flow:</span> <span className="font-semibold text-cyan-300">{r.whale_options_flow}</span>
+                      </p>
+                      {r.put_call_ratio !== undefined && r.put_call_ratio !== null && (
+                        <p>
+                          <span className="text-slate-500">P/C Ratio:</span> <span className="font-bold text-slate-200">{r.put_call_ratio.toFixed(2)}</span>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Action Links */}
