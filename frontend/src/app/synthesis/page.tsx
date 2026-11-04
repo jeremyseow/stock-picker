@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
+import { RetailTrapIcon } from "@/components/RetailTrapIcon";
 import { API_BASE } from "@/lib/api";
 
 interface SynthesisRecord {
@@ -57,8 +58,8 @@ export default function SynthesisPage() {
         );
       case "The Retail Trap":
         return (
-          <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20">
-            🪤 The Retail Trap
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20">
+            <RetailTrapIcon className="w-3.5 h-3.5 text-rose-400 shrink-0" /> The Retail Trap
           </span>
         );
       case "Silent Accumulation":
@@ -127,7 +128,9 @@ export default function SynthesisPage() {
             <p className="text-[11px] text-slate-400 mt-0.5">High retail hype + heavy insider cluster buying. Full alignment breakout.</p>
           </div>
           <div className="p-4 rounded-xl bg-slate-900/40 border border-slate-800/60">
-            <span className="text-base mb-1 block">🪤</span>
+            <span className="text-base mb-1 block">
+              <RetailTrapIcon className="w-5 h-5 text-rose-400" />
+            </span>
             <h3 className="text-xs font-bold text-rose-400">The Retail Trap</h3>
             <p className="text-[11px] text-slate-400 mt-0.5">High retail hype + insider dumping. Retail acting as exit liquidity.</p>
           </div>
@@ -194,10 +197,34 @@ export default function SynthesisPage() {
                 </div>
               </div>
 
-              {/* Diagnosis Callout */}
-              <div className="my-4 p-3.5 rounded-xl bg-slate-950/60 border border-slate-800/60 text-xs leading-relaxed text-slate-200">
-                <span className="text-slate-400 font-bold block mb-1">Diagnosis:</span>
-                {r.synthesis_diagnosis}
+              {/* Diagnosis & Timing Edge Callout */}
+              <div className="my-4 p-4 rounded-xl bg-slate-950/70 border border-slate-800/80 text-xs leading-relaxed text-slate-200 space-y-3">
+                <div>
+                  <span className="text-purple-400 font-bold uppercase tracking-wider text-[10px] block mb-1">
+                    🎯 Cross-Engine Synthesis Diagnosis:
+                  </span>
+                  <p className="text-slate-200 leading-relaxed font-medium">{r.synthesis_diagnosis}</p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-slate-800/60 text-[11px] text-slate-400">
+                  <div className="p-2.5 rounded-lg bg-slate-900/60 border border-slate-800/50">
+                    <span className="text-slate-300 font-bold block mb-0.5">⏱️ What Timing Edge ({r.timing_edge_score.toFixed(0)}%) Means:</span>
+                    <p>
+                      {r.timing_edge_score >= 80
+                        ? `Maximum Asymmetry: Social hype is near-dormant (${r.retail_mentions} mentions). Entering while awareness is in stealth captures the full magnitude of institutional discovery before public narrative crowding.`
+                        : r.timing_edge_score >= 40
+                        ? `Active Momentum Expansion: Retail hype is underway (${r.retail_mentions} mentions). The trade is validated by institutional flow, but the earliest stealth entry window has compressed into liquid momentum.`
+                        : `Compressed Edge: High retail crowd saturation (${r.retail_mentions} mentions) has largely priced in the immediate narrative. Higher sensitivity to momentum exhaustion.`}
+                    </p>
+                  </div>
+
+                  <div className="p-2.5 rounded-lg bg-slate-900/60 border border-slate-800/50">
+                    <span className="text-slate-300 font-bold block mb-0.5">📉 Retail Decay Curve Mechanics:</span>
+                    <p>
+                      The model initializes a base 96% stealth edge that decays exponentially as Reddit mentions climb (e^(-1.8 × mentions)). Every additional 5 social mentions compresses timing edge, signaling transitions from early stealth accumulation into crowded momentum.
+                    </p>
+                  </div>
+                </div>
               </div>
 
               {/* Multi-Engine Signal Comparison */}

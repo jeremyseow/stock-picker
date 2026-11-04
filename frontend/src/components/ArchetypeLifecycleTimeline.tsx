@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { RetailTrapIcon } from "@/components/RetailTrapIcon";
 import { API_BASE } from "@/lib/api";
 
 export interface ArchetypeHistoryPoint {
@@ -68,7 +69,7 @@ export default function ArchetypeLifecycleTimeline({ ticker }: ArchetypeLifecycl
       return {
         badge: "bg-rose-500/10 text-rose-400 border-rose-500/30",
         dot: "bg-rose-500 ring-rose-500/30",
-        icon: "🪤",
+        icon: <RetailTrapIcon className="w-4 h-4 text-rose-400 inline" />,
         label: "The Retail Trap",
         desc: "Smart Money Exit / Bagholder Risk",
       };

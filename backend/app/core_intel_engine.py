@@ -136,9 +136,13 @@ Conduct Core Fundamental Equity Intelligence Research on stock ticker: {ticker_c
         synthesis = response.output
     except Exception as e:
         logger.warning(f"Gemini Core Intel synthesis fallback for ${ticker_clean}: {e}")
+        fallback_filings = "\n".join([
+            f"- {f.get('date', 'N/A')} ({f.get('type', 'Filing')}): {f.get('title', 'Corporate Filing')}"
+            for f in filings[:3]
+        ]) if filings else "Standard corporate filings."
         synthesis = CoreIntelSynthesis(
             ground_truth_status=f"Objective industry positioning for {ticker_clean} in {metrics.get('sector', 'General')}.",
-            ground_truth_filings_news=sec_filings_text[:400] if filings else "Standard corporate filings.",
+            ground_truth_filings_news=fallback_filings,
             events_happenings="Routine business operations and macroeconomic monitoring.",
             risk_score="Medium",
             risk_analysis="Standard market volatility with baseline corporate risk.",

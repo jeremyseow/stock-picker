@@ -23,6 +23,73 @@ interface OptionsFlowCardProps {
   unusualContracts?: OptionsContract[];
 }
 
+function getOptionsFlowAnalysis({
+  ticker,
+  whaleScore,
+  unusualOiMultiplier,
+  putCallRatio,
+  netBullishPremium,
+  sentimentBias,
+  topStrikeSummary,
+}: {
+  ticker: string;
+  whaleScore: number;
+  unusualOiMultiplier: number;
+  putCallRatio: number;
+  netBullishPremium: number;
+  sentimentBias: string;
+  topStrikeSummary?: string;
+}) {
+  // 1. Primary Signal Driver for Card 4
+  let driverSummary = "";
+  if (unusualOiMultiplier >= 2.5 && putCallRatio <= 0.6) {
+    const callRatio = (1 / Math.max(putCallRatio, 0.05)).toFixed(1);
+    driverSummary = `Fresh Positioning (${unusualOiMultiplier.toFixed(1)}x OI) + ${callRatio}:1 Call Skew`;
+  } else if (unusualOiMultiplier >= 2.5) {
+    driverSummary = `Heavy Volume Buildup (${unusualOiMultiplier.toFixed(1)}x Open Interest)`;
+  } else if (putCallRatio <= 0.6) {
+    driverSummary = `Directional Call Flow (${putCallRatio.toFixed(2)} P/C Ratio)`;
+  } else if (putCallRatio >= 1.2) {
+    driverSummary = `Defensive Put Dominance (${putCallRatio.toFixed(2)} P/C Ratio)`;
+  } else {
+    driverSummary = "Standard Options Liquidity & Baseline Flow";
+  }
+
+  // 2. Market Mechanics Observation: What does this mean?
+  let oiMeaning = "";
+  if (unusualOiMultiplier >= 3.0) {
+    oiMeaning = `Single-day trading volume surged to ${unusualOiMultiplier.toFixed(1)}x existing open interest. In options microstructure, when traded volume dramatically exceeds total open interest, it signifies institutional whales aggressively opening brand-new contracts today rather than rolling or closing existing positions.`;
+  } else if (unusualOiMultiplier >= 2.0) {
+    oiMeaning = `Volume outpaced open interest by ${unusualOiMultiplier.toFixed(1)}x, indicating active new capital allocation above routine market-making turnover.`;
+  } else {
+    oiMeaning = `Option volume remained proportional to open interest (${unusualOiMultiplier.toFixed(1)}x), reflecting normal market liquidity without abnormal expansion.`;
+  }
+
+  let pcMeaning = "";
+  if (putCallRatio <= 0.4) {
+    const callMult = (1 / Math.max(putCallRatio, 0.05)).toFixed(1);
+    pcMeaning = `With a Put/Call ratio of ${putCallRatio.toFixed(2)}, bullish call volume outpaces protective puts by nearly ${callMult} to 1, showing unambiguous directional upside conviction with minimal downside hedging.`;
+  } else if (putCallRatio <= 0.65) {
+    pcMeaning = `With a Put/Call ratio of ${putCallRatio.toFixed(2)}, order flow leans decisively bullish toward upside calls.`;
+  } else if (putCallRatio >= 1.3) {
+    pcMeaning = `With a Put/Call ratio of ${putCallRatio.toFixed(2)}, put volume heavily exceeds calls, signaling institutional downside hedging or bearish anticipation.`;
+  } else {
+    pcMeaning = `A Put/Call ratio of ${putCallRatio.toFixed(2)} reflects relatively balanced two-sided trading.`;
+  }
+
+  const observationMeaning = `${oiMeaning} ${pcMeaning}`;
+
+  // 3. Scoring & Label Rationale: Why this score and label?
+  const oiPts = Math.min(unusualOiMultiplier * 7.0, 35.0);
+  const skewPts = Math.max(0.0, (1.0 - Math.min(putCallRatio, 1.0)) * 25.0);
+  const premPts = Math.min(netBullishPremium / 25000.0, 40.0);
+  const premK = Math.round(netBullishPremium / 1000);
+
+  const scoringRationale = `The Whale Conviction Score of ${whaleScore.toFixed(0)}/100 combines: (1) Volume/OI Spike factor contributing ${oiPts.toFixed(1)}/35 max points, (2) Bullish Call Skew contributing ${skewPts.toFixed(1)}/25 points, and (3) Net Bullish Premium (${premK > 0 ? `$${premK}k` : "low cash outlay"}) contributing ${premPts.toFixed(1)}/40 points. Crossing the 40+ threshold triggers the "${sentimentBias}" classification.`;
+
+  return { driverSummary, observationMeaning, scoringRationale };
+}
+
 export default function OptionsFlowCard({
   ticker,
   whaleScore = 0,
@@ -34,6 +101,16 @@ export default function OptionsFlowCard({
   unusualContracts = [],
 }: OptionsFlowCardProps) {
   const isHighConviction = whaleScore >= 50;
+
+  const { driverSummary, observationMeaning, scoringRationale } = getOptionsFlowAnalysis({
+    ticker,
+    whaleScore,
+    unusualOiMultiplier,
+    putCallRatio,
+    netBullishPremium,
+    sentimentBias,
+    topStrikeSummary,
+  });
 
   return (
     <div className="rounded-2xl bg-slate-900/40 border border-slate-800 p-6 space-y-6">
@@ -65,48 +142,85 @@ export default function OptionsFlowCard({
 
       {/* Metrics Row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800/60">
-          <span className="text-[10px] text-slate-500 uppercase font-bold block">
-            Put / Call Ratio
-          </span>
-          <span className="text-lg font-extrabold text-white mt-1 block">
-            {putCallRatio.toFixed(2)}
-          </span>
-          <span className="text-[11px] text-slate-400">
+        <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800/60 flex flex-col justify-between">
+          <div>
+            <span className="text-[10px] text-slate-500 uppercase font-bold block">
+              Put / Call Ratio
+            </span>
+            <span className="text-lg font-extrabold text-white mt-1 block">
+              {putCallRatio.toFixed(2)}
+            </span>
+          </div>
+          <span className="text-[11px] text-slate-400 mt-1">
             {putCallRatio <= 0.6 ? "Bullish call skew" : putCallRatio >= 1.2 ? "Bearish put skew" : "Balanced flow"}
           </span>
         </div>
 
-        <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800/60">
-          <span className="text-[10px] text-slate-500 uppercase font-bold block">
-            Peak Volume / OI
-          </span>
-          <span className="text-lg font-extrabold text-emerald-400 mt-1 block">
-            {unusualOiMultiplier.toFixed(1)}x
-          </span>
-          <span className="text-[11px] text-slate-400">
+        <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800/60 flex flex-col justify-between">
+          <div>
+            <span className="text-[10px] text-slate-500 uppercase font-bold block">
+              Peak Volume / OI
+            </span>
+            <span className="text-lg font-extrabold text-emerald-400 mt-1 block">
+              {unusualOiMultiplier.toFixed(1)}x
+            </span>
+          </div>
+          <span className="text-[11px] text-slate-400 mt-1">
             {unusualOiMultiplier >= 2.5 ? "Unusual accumulation" : "Standard activity"}
           </span>
         </div>
 
-        <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800/60">
-          <span className="text-[10px] text-slate-500 uppercase font-bold block">
-            Net Bullish Premium
-          </span>
-          <span className="text-lg font-extrabold text-indigo-300 mt-1 block">
-            ${(netBullishPremium / 1000).toFixed(0)}k
-          </span>
-          <span className="text-[11px] text-slate-400">OTM call sweeps</span>
+        <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800/60 flex flex-col justify-between">
+          <div>
+            <span className="text-[10px] text-slate-500 uppercase font-bold block">
+              Net Bullish Premium
+            </span>
+            <span className="text-lg font-extrabold text-indigo-300 mt-1 block">
+              ${(netBullishPremium / 1000).toFixed(0)}k
+            </span>
+          </div>
+          <span className="text-[11px] text-slate-400 mt-1">OTM call sweeps</span>
         </div>
 
-        <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800/60">
-          <span className="text-[10px] text-slate-500 uppercase font-bold block">
-            Key Sweeps Summary
+        <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800/60 flex flex-col justify-between">
+          <div>
+            <span className="text-[10px] text-slate-500 uppercase font-bold block">
+              Primary Signal Driver
+            </span>
+            <span
+              className="text-xs font-semibold text-cyan-300 mt-1 block leading-snug break-words"
+              title={driverSummary}
+            >
+              {driverSummary}
+            </span>
+          </div>
+          <span className="text-[11px] text-slate-400 mt-1">Conviction catalyst</span>
+        </div>
+      </div>
+
+      {/* Institutional Flow Interpretation & Score Rationale Panel */}
+      <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800/80 space-y-3">
+        <div className="flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+          <span className="text-xs font-bold text-cyan-300 uppercase tracking-wider">
+            Whale Flow Interpretation & Score Rationale
           </span>
-          <span className="text-xs font-semibold text-slate-200 mt-1 block truncate" title={topStrikeSummary || "None"}>
-            {topStrikeSummary || "Standard options flow"}
-          </span>
-          <span className="text-[11px] text-slate-400">Target strike horizon</span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-slate-300 leading-relaxed">
+          <div className="p-3.5 rounded-lg bg-slate-900/60 border border-slate-800/60 space-y-1.5">
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+              <span>🔍</span> 1. What the Market Observation Means
+            </span>
+            <p className="text-slate-300 leading-relaxed">{observationMeaning}</p>
+          </div>
+
+          <div className="p-3.5 rounded-lg bg-slate-900/60 border border-slate-800/60 space-y-1.5">
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+              <span>⚖️</span> 2. Why This Score & Label Were Given
+            </span>
+            <p className="text-slate-300 leading-relaxed">{scoringRationale}</p>
+          </div>
         </div>
       </div>
 
@@ -144,14 +258,14 @@ export default function OptionsFlowCard({
                         {c.type}
                       </span>
                     </td>
-                    <td className="py-2.5 px-3 font-bold text-white">${c.strike}</td>
-                    <td className="py-2.5 px-3 text-slate-300">{c.expiration}</td>
+                    <td className="py-2.5 px-3 text-white font-bold">${c.strike}</td>
+                    <td className="py-2.5 px-3 text-slate-400">{c.expiration}</td>
                     <td className="py-2.5 px-3 text-slate-400">{c.dte}d</td>
-                    <td className="py-2.5 px-3 text-white">{c.volume.toLocaleString()}</td>
+                    <td className="py-2.5 px-3 text-slate-200">{c.volume.toLocaleString()}</td>
                     <td className="py-2.5 px-3 text-slate-400">{c.open_interest.toLocaleString()}</td>
-                    <td className="py-2.5 px-3 text-emerald-400 font-bold">{c.ratio}x</td>
-                    <td className="py-2.5 px-3 text-indigo-300 font-bold">
-                      ${Math.round(c.premium).toLocaleString()}
+                    <td className="py-2.5 px-3 text-emerald-400 font-bold">{c.ratio.toFixed(1)}x</td>
+                    <td className="py-2.5 px-3 text-slate-200">
+                      {c.premium > 0 ? `$${(c.premium / 1000).toFixed(0)}k` : "—"}
                     </td>
                   </tr>
                 ))}
@@ -160,11 +274,10 @@ export default function OptionsFlowCard({
           </div>
         </div>
       ) : (
-        <div className="p-4 rounded-xl bg-slate-950/40 border border-slate-800 text-center text-xs text-slate-400">
-          No institutional sweep orders above $50k premium detected in today&apos;s tape for ${ticker}.
+        <div className="p-4 rounded-xl bg-slate-950/40 border border-slate-800/40 text-xs text-slate-400">
+          No individual contracts exceeded the 2.5x Volume/OI threshold today. Flow is based on aggregate tape volume.
         </div>
       )}
     </div>
   );
 }
-

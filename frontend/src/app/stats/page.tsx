@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
+import { RetailTrapIcon } from "@/components/RetailTrapIcon";
 import { API_BASE } from "@/lib/api";
 
 interface RetailReportItem {
@@ -196,8 +197,8 @@ export default function HistoricalReportsPage() {
         );
       case "The Retail Trap":
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-black bg-rose-500/20 text-rose-300 border border-rose-500/40">
-            🪤 The Retail Trap
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-black bg-rose-500/20 text-rose-300 border border-rose-500/40">
+            <RetailTrapIcon className="w-3.5 h-3.5 text-rose-400 shrink-0" /> The Retail Trap
           </span>
         );
       case "Silent Accumulation":
@@ -502,7 +503,7 @@ export default function HistoricalReportsPage() {
                           </div>
 
                           {rep.actionable_thesis && (
-                            <p className="text-xs text-slate-400 line-clamp-3 mb-6 italic leading-relaxed">
+                            <p className="text-xs text-slate-300 line-clamp-3 mb-6 leading-relaxed">
                               &ldquo;{rep.actionable_thesis}&rdquo;
                             </p>
                           )}

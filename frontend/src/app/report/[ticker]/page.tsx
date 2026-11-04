@@ -6,6 +6,8 @@ import Navbar from "@/components/Navbar";
 import SmartMoneyRadar, { RawInsiderData } from "@/components/SmartMoneyRadar";
 import ContrarianPlaybook from "@/components/ContrarianPlaybook";
 import OptionsFlowCard from "@/components/OptionsFlowCard";
+import { FilingHighlights } from "@/components/FilingHighlights";
+import { RetailTrapIcon } from "@/components/RetailTrapIcon";
 import { API_BASE } from "@/lib/api";
 
 interface RawMetrics {
@@ -215,7 +217,7 @@ export default function ReportPage({ params }: { params: Promise<{ ticker: strin
       case "The Retail Trap":
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-black bg-rose-500/20 text-rose-300 border border-rose-500/40">
-            🪤 The Retail Trap (Bearish Divergence)
+            <RetailTrapIcon className="w-4 h-4 text-rose-400 shrink-0" /> The Retail Trap (Bearish Divergence)
           </span>
         );
       case "Silent Accumulation":
@@ -438,7 +440,7 @@ export default function ReportPage({ params }: { params: Promise<{ ticker: strin
 
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
             {/* Ground Truth Status */}
-            <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-6 flex flex-col justify-between backdrop-blur-sm">
+            <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-6 flex flex-col justify-start backdrop-blur-sm">
               <div>
                 <div className="flex items-center gap-2 mb-4">
                   <span className="w-6 h-6 rounded bg-purple-500/10 text-purple-400 flex items-center justify-center text-xs font-bold">
@@ -451,7 +453,7 @@ export default function ReportPage({ params }: { params: Promise<{ ticker: strin
             </div>
 
             {/* Filings & News Analysis */}
-            <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-6 flex flex-col justify-between backdrop-blur-sm">
+            <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-6 flex flex-col justify-start backdrop-blur-sm">
               <div>
                 <div className="flex items-center gap-2 mb-4">
                   <span className="w-6 h-6 rounded bg-blue-500/10 text-blue-400 flex items-center justify-center text-xs font-bold">
@@ -459,12 +461,12 @@ export default function ReportPage({ params }: { params: Promise<{ ticker: strin
                   </span>
                   <h3 className="font-extrabold text-slate-200">SEC 10-Q & 8-K Highlights</h3>
                 </div>
-                <p className="text-slate-300 text-xs leading-relaxed">{report.ground_truth_filings_news}</p>
+                <FilingHighlights text={report.ground_truth_filings_news} />
               </div>
             </div>
 
             {/* Events & Happenings */}
-            <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-6 flex flex-col justify-between backdrop-blur-sm">
+            <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-6 flex flex-col justify-start backdrop-blur-sm">
               <div>
                 <div className="flex items-center gap-2 mb-4">
                   <span className="w-6 h-6 rounded bg-rose-500/10 text-rose-400 flex items-center justify-center text-xs font-bold">
@@ -477,9 +479,9 @@ export default function ReportPage({ params }: { params: Promise<{ ticker: strin
             </div>
 
             {/* Risk Assessment */}
-            <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-6 flex flex-col justify-between backdrop-blur-sm">
+            <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-6 flex flex-col justify-start space-y-4 backdrop-blur-sm">
               <div>
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
                     <span className="w-6 h-6 rounded bg-teal-500/10 text-teal-400 flex items-center justify-center text-xs font-bold">
                       ⚖️
@@ -495,6 +497,37 @@ export default function ReportPage({ params }: { params: Promise<{ ticker: strin
                   </span>
                 </div>
                 <p className="text-slate-300 text-xs leading-relaxed">{report.reconciliation_analysis}</p>
+              </div>
+
+              {/* Risk Assessment Table */}
+              <div className="pt-3 border-t border-slate-800/60 space-y-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                  Rating Decision Matrix
+                </span>
+                <div className="flex items-start gap-2.5 p-2 rounded-lg bg-slate-950/60 border border-slate-800/60">
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
+                    LOW
+                  </span>
+                  <span className="text-[11px] text-slate-300 leading-snug">
+                    Strong balance sheet solvency, resilient free cash flow, low customer churn.
+                  </span>
+                </div>
+                <div className="flex items-start gap-2.5 p-2 rounded-lg bg-slate-950/60 border border-slate-800/60">
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20 shrink-0">
+                    MED
+                  </span>
+                  <span className="text-[11px] text-slate-300 leading-snug">
+                    Cyclical exposure, debt maturities, or margin compression pressures.
+                  </span>
+                </div>
+                <div className="flex items-start gap-2.5 p-2 rounded-lg bg-slate-950/60 border border-slate-800/60">
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20 shrink-0">
+                    HIGH
+                  </span>
+                  <span className="text-[11px] text-slate-300 leading-snug">
+                    Solvency concerns, heavy dilutive financing, or extreme retail speculation.
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -520,25 +553,37 @@ export default function ReportPage({ params }: { params: Promise<{ ticker: strin
 
           {smOverlay?.has_data && smOverlay.inflow_ledger && smOverlay.inflow_ledger.length > 0 ? (
             <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-6 backdrop-blur-sm space-y-6">
-              {/* Ledger Summary */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-slate-950/60 border border-slate-800 p-3 rounded-xl">
-                  <span className="text-[10px] text-slate-500 uppercase font-black block">Buyers</span>
+              {/* Ledger Summary Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                <div className="bg-slate-950/60 border border-slate-800 p-3.5 rounded-xl">
+                  <span className="text-[10px] text-slate-500 uppercase font-black block mb-1">Buyers</span>
                   <span className="text-xs font-semibold text-slate-200">
                     {smOverlay.top_buyer_summary || "Multiple executive filings"}
                   </span>
                 </div>
-                <div className="bg-slate-950/60 border border-slate-800 p-3 rounded-xl">
-                  <span className="text-[10px] text-slate-500 uppercase font-black block">Conviction Tier</span>
+                <div className="bg-slate-950/60 border border-slate-800 p-3.5 rounded-xl">
+                  <span className="text-[10px] text-slate-500 uppercase font-black block mb-1">Conviction Tier</span>
                   <span className="text-xs font-bold text-purple-300">{smOverlay.conviction_tier}</span>
                 </div>
-                <div className="bg-slate-950/60 border border-slate-800 p-3 rounded-xl">
-                  <span className="text-[10px] text-slate-500 uppercase font-black block">Actionable Thesis</span>
-                  <span className="text-xs font-semibold text-slate-200 italic">
-                    {smOverlay.actionable_thesis || "Monitor for continuation."}
-                  </span>
-                </div>
+                {smOverlay.catalyst_horizon && (
+                  <div className="bg-slate-950/60 border border-slate-800 p-3.5 rounded-xl">
+                    <span className="text-[10px] text-slate-500 uppercase font-black block mb-1">Projected Horizon</span>
+                    <span className="text-xs font-bold text-amber-300">⏳ {smOverlay.catalyst_horizon}</span>
+                  </div>
+                )}
               </div>
+
+              {/* Actionable Thesis Callout - Full Width & Non-Italic */}
+              {smOverlay.actionable_thesis && (
+                <div className="p-4 rounded-xl bg-purple-950/20 border border-purple-800/40 space-y-1.5">
+                  <span className="text-[10px] text-purple-400 uppercase font-black tracking-wider block">
+                    ⚡ Actionable Thesis & Swing Strategy
+                  </span>
+                  <p className="text-xs font-medium text-slate-200 leading-relaxed font-sans">
+                    {smOverlay.actionable_thesis}
+                  </p>
+                </div>
+              )}
 
               {/* Inflow Ledger Table */}
               <div className="overflow-x-auto">
@@ -613,6 +658,37 @@ export default function ReportPage({ params }: { params: Promise<{ ticker: strin
                 )}
               </div>
               <p className="text-xs text-slate-300 leading-relaxed">{retailOverlay.community_hype}</p>
+
+              {/* Quantitative Rating Decision Gate */}
+              {(() => {
+                const rec = retailOverlay.recommendation || report.recommendation;
+                const upsideVal = report.potential_upside;
+                return (
+                  <div className="mt-4 p-4 rounded-xl bg-slate-950/70 border border-slate-800/80 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2 h-2 rounded-full ${rec === "BUY" ? "bg-emerald-400" : rec === "SELL" ? "bg-rose-400" : "bg-amber-400"} animate-pulse`} />
+                      <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                        Quantitative Rating Decision Gate: <span className={rec === "BUY" ? "text-emerald-400" : rec === "SELL" ? "text-rose-400" : "text-amber-400"}>{rec}</span>
+                      </span>
+                    </div>
+                    <div className="text-xs text-slate-300 leading-relaxed font-sans">
+                      {rec === "BUY" ? (
+                        <p>
+                          <strong>Why BUY?</strong> Projected upside of <strong>+{upsideVal ? upsideVal.toFixed(1) : "0"}%</strong> clears the 18% quantitative hurdle rate and is supported by fundamental cash flow solvency and healthy margins.
+                        </p>
+                      ) : rec === "HOLD" ? (
+                        <p>
+                          <strong>Why HOLD?</strong> {upsideVal && upsideVal >= 18.0 ? `Although the target price indicates +${upsideVal.toFixed(1)}% technical upside, the engine triggered a capital preservation gate. Near-term guidance headwinds, customer churn, or post-earnings capitulation introduce excessive variance, superseding the target upside to enforce a prudent HOLD.` : `Projected upside (+${upsideVal ? upsideVal.toFixed(1) : "0"}%) does not clear the 18% minimum hurdle rate necessary to offset single-stock volatility.`}
+                        </p>
+                      ) : (
+                        <p>
+                          <strong>Why SELL?</strong> Disclosed operational deterioration, negative free cash flow trajectory, or severe valuation bubble warnings indicate retail enthusiasm is disconnected from financial reality.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           ) : (
             <div className="p-6 rounded-2xl bg-slate-900/30 border border-slate-800/80 text-center">

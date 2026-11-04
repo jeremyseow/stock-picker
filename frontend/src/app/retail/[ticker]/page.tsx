@@ -3,6 +3,7 @@
 import { useEffect, useState, use } from "react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
+import { FilingHighlights } from "@/components/FilingHighlights";
 import { API_BASE } from "@/lib/api";
 
 interface RawMetrics {
@@ -241,6 +242,31 @@ export default function RetailDetailPage({ params }: { params: Promise<{ ticker:
             </p>
           </div>
 
+          {/* Quantitative Decision Gate & Rating Hurdle Analysis */}
+          <div className="mt-4 p-4 rounded-xl bg-slate-950/70 border border-slate-800/80 space-y-2">
+            <div className="flex items-center gap-2">
+              <span className={`w-2 h-2 rounded-full ${report.recommendation === "BUY" ? "bg-emerald-400" : report.recommendation === "SELL" ? "bg-rose-400" : "bg-amber-400"} animate-pulse`} />
+              <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                Quantitative Rating Decision Gate: <span className={report.recommendation === "BUY" ? "text-emerald-400" : report.recommendation === "SELL" ? "text-rose-400" : "text-amber-400"}>{report.recommendation}</span>
+              </span>
+            </div>
+            <div className="text-xs text-slate-300 leading-relaxed font-sans">
+              {report.recommendation === "BUY" ? (
+                <p>
+                  <strong>Why BUY?</strong> The projected upside of <strong>+{upside}%</strong> exceeds the 18% minimum quantitative hurdle rate and is fundamentally supported by balance sheet solvency and sustainable gross margins.
+                </p>
+              ) : report.recommendation === "HOLD" ? (
+                <p>
+                  <strong>Why HOLD?</strong> {upside && parseFloat(upside) >= 18.0 ? `Although the target price indicates +${upside}% technical upside, the engine triggered a capital preservation gate. Near-term guidance headwinds, customer churn, or post-earnings capitulation introduce excessive variance, superseding the target upside to enforce a prudent HOLD.` : `Projected upside (+${upside || "0"}%) does not meet the 18% hurdle rate necessary to offset single-stock volatility.`}
+                </p>
+              ) : (
+                <p>
+                  <strong>Why SELL?</strong> Disclosed operational deterioration, negative free cash flow trajectory, or severe valuation bubble warnings indicate retail enthusiasm is disconnected from financial reality.
+                </p>
+              )}
+            </div>
+          </div>
+
           {/* Ground Truth Moat Description Box - Full Width */}
           {report.ground_truth_status && (
             <div className="mt-4 p-4 rounded-xl bg-slate-950/60 border border-indigo-500/20 text-xs text-slate-300 leading-relaxed">
@@ -283,7 +309,7 @@ export default function RetailDetailPage({ params }: { params: Promise<{ ticker:
         {/* Ground Truth & Reconciliation Grid */}
         <div className="grid gap-6 md:grid-cols-3 mb-8">
           {/* Filings */}
-          <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-6 flex flex-col justify-between backdrop-blur-sm">
+          <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-6 flex flex-col justify-start backdrop-blur-sm">
             <div>
               <div className="flex items-center gap-2 mb-3">
                 <span className="w-6 h-6 rounded bg-blue-500/10 text-blue-400 flex items-center justify-center text-xs font-bold">
@@ -291,7 +317,7 @@ export default function RetailDetailPage({ params }: { params: Promise<{ ticker:
                 </span>
                 <h3 className="font-extrabold text-slate-200 text-sm">SEC 10-Q & 8-K Highlights</h3>
               </div>
-              <p className="text-slate-300 text-xs leading-relaxed">{report.ground_truth_filings_news}</p>
+              <FilingHighlights text={report.ground_truth_filings_news} />
             </div>
           </div>
 

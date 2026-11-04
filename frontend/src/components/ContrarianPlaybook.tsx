@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { RetailTrapIcon } from "@/components/RetailTrapIcon";
 
 export interface ContrarianPlaybookProps {
   ticker: string;
@@ -90,7 +91,7 @@ export default function ContrarianPlaybook({
   const lifecyclePhases = [
     { name: "Silent Accumulation", label: "1. Stealth Accumulation", icon: "🤫", desc: "Insiders build position; zero retail buzz" },
     { name: "The Rocket", label: "2. The Rocket", icon: "🚀", desc: "Dual alignment: crowd + smart money breakout" },
-    { name: "The Retail Trap", label: "3. The Retail Trap", icon: "🪤", desc: "Retail euphoria while smart money exits" },
+    { name: "The Retail Trap", label: "3. The Retail Trap", icon: <RetailTrapIcon className="w-4 h-4 text-rose-400 inline" />, desc: "Retail euphoria while smart money exits" },
     { name: "Market Noise", label: "4. Market Noise", icon: "📢", desc: "Consolidation or lack of directional catalyst" },
   ];
 

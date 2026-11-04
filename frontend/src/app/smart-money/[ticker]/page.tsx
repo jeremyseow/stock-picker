@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import { API_BASE } from "@/lib/api";
+import { FilingHighlights } from "@/components/FilingHighlights";
 
 interface InflowEntry {
   type: string;
@@ -44,6 +45,8 @@ interface SmartMoneyReportDetail {
   target_price: number | null;
   conviction_score: number;
   conviction_tier: string;
+  cluster_count?: number;
+  total_buy_volume?: number;
   inflow_ledger: InflowEntry[];
   political_catalyst_analysis: string;
   corporate_catalyst_analysis: string;
@@ -199,6 +202,42 @@ export default function SmartMoneyDetailPage() {
                   {report.actionable_thesis}
                 </p>
               </div>
+
+              {/* Institutional Inflow Rationale & Scoring Mechanics */}
+              <div className="mt-4 p-4 rounded-xl bg-slate-950/70 border border-slate-800/80 space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
+                  <span className="text-xs font-bold text-purple-300 uppercase tracking-wider">
+                    Institutional Inflow Rationale & Scoring Mechanics
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-slate-300 leading-relaxed">
+                  <div className="p-3.5 rounded-lg bg-slate-900/60 border border-slate-800/60 space-y-1.5">
+                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <span>🔍</span> 1. What the Market Observation Means
+                    </span>
+                    <p className="text-slate-300 leading-relaxed">
+                      SEC Form 4 Code P disclosures represent discretionary open-market purchases executed with personal out-of-pocket capital—completely separate from routine executive stock compensation or tax grants.
+                      {(report.cluster_count ?? (report.inflow_ledger?.length ?? 0)) >= 2
+                        ? ` A coordinated cluster of ${report.cluster_count ?? report.inflow_ledger?.length} distinct executives buying within a narrow window filters out isolated individual tax planning and demonstrates united leadership conviction.`
+                        : " Open-market insider accumulation provides direct alignment between management incentives and shareholder returns."}
+                    </p>
+                  </div>
+
+                  <div className="p-3.5 rounded-lg bg-slate-900/60 border border-slate-800/60 space-y-1.5">
+                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <span>⚖️</span> 2. Why This Score & Tier Were Awarded
+                    </span>
+                    <p className="text-slate-300 leading-relaxed">
+                      The Conviction Score of <strong>{report.conviction_score.toFixed(1)}</strong> is calculated via: (1) C-Suite/Director Seniority Multipliers (3.5x for CEO/CFO), (2) Cluster Multiplier {((report.cluster_count ?? (report.inflow_ledger?.length ?? 0)) >= 3) ? "(2.8x for ≥3 buyers)" : ((report.cluster_count ?? (report.inflow_ledger?.length ?? 0)) === 2) ? "(1.5x for 2 buyers)" : "(1.0x baseline)"}, and (3) Committed cash volume {(report.total_buy_volume ?? 0) > 0 ? `($${((report.total_buy_volume ?? 0) / 1000).toFixed(0)}k total outlay)` : ""}.
+                      {report.conviction_score >= 150
+                        ? " Scoring above the 150-point threshold assigns the Tier 1 High Conviction badge."
+                        : " Scoring above 75 points qualifies for the Tier 2 Moderate Inflow tier."}
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* Core Fundamentals & Valuation Grid */}
@@ -322,7 +361,7 @@ export default function SmartMoneyDetailPage() {
             {/* Ground Truth & Fundamental Risk Profile Grid */}
             <div className="grid gap-6 md:grid-cols-3">
               {/* SEC Ground Truth */}
-              <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-6 backdrop-blur-sm flex flex-col justify-between">
+              <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-6 backdrop-blur-sm flex flex-col justify-start">
                 <div>
                   <div className="flex items-center gap-2 mb-3">
                     <span className="w-6 h-6 rounded bg-indigo-500/10 text-indigo-400 flex items-center justify-center text-xs font-bold">
@@ -330,9 +369,10 @@ export default function SmartMoneyDetailPage() {
                     </span>
                     <h3 className="font-extrabold text-slate-200 text-sm">SEC Ground Truth & Disclosures</h3>
                   </div>
-                  <p className="text-slate-300 text-xs leading-relaxed">
-                    {report.core_intel?.ground_truth_filings_news || "Financial metrics cross-referenced with public SEC 10-Q/8-K regulatory filings."}
-                  </p>
+                  <FilingHighlights
+                    text={report.core_intel?.ground_truth_filings_news}
+                    emptyText="Financial metrics cross-referenced with public SEC 10-Q/8-K regulatory filings."
+                  />
                 </div>
               </div>
 
