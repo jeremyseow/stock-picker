@@ -227,19 +227,19 @@ stock-picker/
 |---|---|---|---|
 | **Retail Momentum** | `/api/retail/today` | GET | Top retail momentum tickers from latest run |
 | | `/api/retail/reports` | GET | Historical retail momentum reports by `?date=` |
-| | `/api/retail/report/{ticker}` | GET | Detailed retail momentum report with linked Core Intel |
+| | `/api/retail/report/{ticker}` | GET | Detailed retail momentum report with linked Core Intel (supports `?date=YYYY-MM-DD`) |
 | | `/api/retail/trigger` | POST | On-demand trigger for Engine 1 (Retail Momentum) |
 | **Smart Money** | `/api/smart-money/today` | GET | Latest Form 4 & STOCK Act candidate tickers |
 | | `/api/smart-money/reports` | GET | Historical smart money reports by `?date=` |
-| | `/api/smart-money/report/{ticker}` | GET | Self-contained smart catalyst report + Core Intel + Inflow Ledger |
+| | `/api/smart-money/report/{ticker}` | GET | Self-contained smart catalyst report + Core Intel + Inflow Ledger (supports `?date=YYYY-MM-DD`) |
 | | `/api/smart-money/trigger` | POST | On-demand trigger for Engine 2 (Smart Money Scout) |
 | **Whale Options** | `/api/options/today` | GET | Latest unusual options flow and call sweep candidates |
 | | `/api/options/reports` | GET | Historical options whale reports by `?date=` |
-| | `/api/options/report/{ticker}` | GET | Detailed ticker options flow ledger + Core Intel |
+| | `/api/options/report/{ticker}` | GET | Detailed ticker options flow ledger + Core Intel (supports `?date=YYYY-MM-DD`) |
 | | `/api/options/trigger` | POST | On-demand trigger for Engine 3 (Whale Options Radar) |
 | **Synthesis & Master** | `/api/synthesis/today` | GET | Cross-engine 3-way archetype synthesis matrix records |
 | | `/api/synthesis/reports` | GET | Historical synthesis matrix records by `?date=` |
-| | `/api/master/report/{ticker}` | GET | Unified Master Report with Contrarian Playbook & multi-engine overlays |
+| | `/api/master/report/{ticker}` | GET | Unified Master Report with Contrarian Playbook & multi-engine overlays (supports `?date=YYYY-MM-DD`) |
 | | `/api/master/report/{ticker}/text` | GET | Plain-text summary for notifications/bots |
 | **Calibration & Backtest** | `/api/calibration/scorecard` | GET | Walk-forward hit rates (T+30 vs SPY), archetype stats, and weight tuning |
 | | `/api/calibration/apply-weights` | POST | Persist approved calibrated weights into production configuration |

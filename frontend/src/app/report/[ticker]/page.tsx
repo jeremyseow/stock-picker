@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, use } from "react";
+import { useEffect, useState, use, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import SmartMoneyRadar, { RawInsiderData } from "@/components/SmartMoneyRadar";
@@ -108,17 +109,27 @@ interface MasterReport {
   synthesis?: SynthesisFacet;
 }
 
-export default function ReportPage({ params }: { params: Promise<{ ticker: string }> }) {
+function ReportPageContent({ params }: { params: Promise<{ ticker: string }> }) {
   const { ticker } = use(params);
+  const searchParams = useSearchParams();
+  const reportDate = searchParams.get("date");
   const [report, setReport] = useState<MasterReport | null>(null);
   const [optionsData, setOptionsData] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/master/report/${ticker}`)
+    setLoading(true);
+    const masterUrl = reportDate
+      ? `${API_BASE}/api/master/report/${ticker}?date=${reportDate}`
+      : `${API_BASE}/api/master/report/${ticker}`;
+    const optionsUrl = reportDate
+      ? `${API_BASE}/api/options/report/${ticker}?date=${reportDate}`
+      : `${API_BASE}/api/options/report/${ticker}`;
+
+    fetch(masterUrl)
       .then((res) => {
-        if (!res.ok) throw new Error("Report not found in database");
+        if (!res.ok) throw new Error(`Report not found in database${reportDate ? ` for ${reportDate}` : ""}`);
         return res.json();
       })
       .then((data) => {
@@ -152,11 +163,11 @@ export default function ReportPage({ params }: { params: Promise<{ ticker: strin
         setLoading(false);
       });
 
-    fetch(`${API_BASE}/api/options/report/${ticker}`)
+    fetch(optionsUrl)
       .then((res) => (res.ok ? res.json() : null))
       .then((opt) => setOptionsData(opt))
       .catch(() => {});
-  }, [ticker]);
+  }, [ticker, reportDate]);
 
   if (loading) {
     return (
@@ -256,21 +267,30 @@ export default function ReportPage({ params }: { params: Promise<{ ticker: strin
       <main className="max-w-6xl mx-auto px-6 py-8 relative">
         {/* Navigation Bar */}
         <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
-          <Link
-            href="/"
-            className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-slate-200 font-medium group transition-colors"
-          >
-            <span className="group-hover:-translate-x-1 transition-transform">&larr;</span> Back to Dashboard
-          </Link>
+          {reportDate ? (
+            <Link
+              href="/stats"
+              className="inline-flex items-center gap-2 text-sm text-amber-400 hover:text-amber-300 font-semibold group transition-colors"
+            >
+              <span className="group-hover:-translate-x-1 transition-transform">&larr;</span> Historical Archive ({reportDate}) &bull; Back to Historical Reports
+            </Link>
+          ) : (
+            <Link
+              href="/"
+              className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-slate-200 font-medium group transition-colors"
+            >
+              <span className="group-hover:-translate-x-1 transition-transform">&larr;</span> Back to Dashboard
+            </Link>
+          )}
           <div className="flex flex-wrap items-center gap-3">
             <Link
-              href={`/retail/${report.ticker}`}
+              href={`/retail/${report.ticker}${reportDate ? `?date=${reportDate}` : ""}`}
               className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-slate-900/80 hover:bg-slate-800 text-amber-300 hover:text-white border border-amber-500/30 transition-all"
             >
               <span>💬</span> Retail Momentum Report &rarr;
             </Link>
             <Link
-              href={`/smart-money/${report.ticker}`}
+              href={`/smart-money/${report.ticker}${reportDate ? `?date=${reportDate}` : ""}`}
               className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-slate-900/80 hover:bg-slate-800 text-purple-300 hover:text-white border border-purple-500/30 transition-all"
             >
               <span>🏛️</span> Smart Money Catalyst Report &rarr;
@@ -293,6 +313,11 @@ export default function ReportPage({ params }: { params: Promise<{ ticker: strin
                 <span className="px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">
                   ⚡ Unified Master Report
                 </span>
+                {reportDate && (
+                  <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/10 text-amber-300 border border-amber-500/30">
+                    📅 Historical Run: {reportDate}
+                  </span>
+                )}
                 {synthesis?.archetype && getArchetypeBadge(synthesis.archetype)}
                 {synthesis?.recommended_action && (
                   <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold bg-slate-800 text-white border border-slate-700">
@@ -794,9 +819,15 @@ export default function ReportPage({ params }: { params: Promise<{ ticker: strin
 
         {/* Bottom Navigation */}
         <div className="mt-12 pt-6 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-4">
-          <Link href="/" className="text-xs font-semibold text-slate-400 hover:text-slate-200 transition-colors">
-            &larr; Return to Daily Dashboard
-          </Link>
+          {reportDate ? (
+            <Link href="/stats" className="text-xs font-semibold text-amber-400 hover:text-amber-300 transition-colors">
+              &larr; Return to Historical Reports ({reportDate})
+            </Link>
+          ) : (
+            <Link href="/" className="text-xs font-semibold text-slate-400 hover:text-slate-200 transition-colors">
+              &larr; Return to Daily Dashboard
+            </Link>
+          )}
           <Link
             href={`/analytics?ticker=${report.ticker}`}
             className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20 transition-all group"
@@ -807,5 +838,22 @@ export default function ReportPage({ params }: { params: Promise<{ ticker: strin
         </div>
       </main>
     </div>
+  );
+}
+
+export default function ReportPage({ params }: { params: Promise<{ ticker: string }> }) {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center gap-4">
+          <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+          <p className="text-slate-400 text-sm font-medium animate-pulse">
+            Loading Unified Master Report...
+          </p>
+        </div>
+      }
+    >
+      <ReportPageContent params={params} />
+    </Suspense>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, use } from "react";
+import { useEffect, useState, use, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import { FilingHighlights } from "@/components/FilingHighlights";
@@ -53,17 +54,22 @@ interface RetailReportDetail {
   };
 }
 
-export default function RetailDetailPage({ params }: { params: Promise<{ ticker: string }> }) {
+function RetailDetailContent({ params }: { params: Promise<{ ticker: string }> }) {
   const { ticker } = use(params);
+  const searchParams = useSearchParams();
+  const reportDate = searchParams.get("date");
   const [report, setReport] = useState<RetailReportDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
     setLoading(true);
-    fetch(`${API_BASE}/api/retail/report/${ticker}`)
+    const queryUrl = reportDate
+      ? `${API_BASE}/api/retail/report/${ticker}?date=${reportDate}`
+      : `${API_BASE}/api/retail/report/${ticker}`;
+    fetch(queryUrl)
       .then((res) => {
-        if (!res.ok) throw new Error(`Retail Momentum report for $${ticker.toUpperCase()} not found`);
+        if (!res.ok) throw new Error(`Retail Momentum report for $${ticker.toUpperCase()}${reportDate ? ` on ${reportDate}` : ""} not found`);
         return res.json();
       })
       .then((data) => {
@@ -82,7 +88,7 @@ export default function RetailDetailPage({ params }: { params: Promise<{ ticker:
         setError(err.message);
         setLoading(false);
       });
-  }, [ticker]);
+  }, [ticker, reportDate]);
 
   const recColorStyles: Record<string, string> = {
     BUY: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
@@ -125,14 +131,23 @@ export default function RetailDetailPage({ params }: { params: Promise<{ ticker:
             <h2 className="text-xl font-bold text-red-200">Report Unavailable</h2>
             <p className="text-red-400/80 text-sm mt-2">{error || "No retail report found."}</p>
             <div className="mt-6 flex flex-col sm:flex-row gap-3 justify-center">
+              {reportDate ? (
+                <Link
+                  href="/stats"
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-white transition-colors"
+                >
+                  &larr; Historical Reports ({reportDate})
+                </Link>
+              ) : (
+                <Link
+                  href="/"
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-white transition-colors"
+                >
+                  &larr; Retail Feed
+                </Link>
+              )}
               <Link
-                href="/"
-                className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-white transition-colors"
-              >
-                &larr; Retail Feed
-              </Link>
-              <Link
-                href={`/smart-money/${ticker}`}
+                href={`/smart-money/${ticker}${reportDate ? `?date=${reportDate}` : ""}`}
                 className="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
               >
                 Check Smart Money Scout &rarr;
@@ -158,22 +173,31 @@ export default function RetailDetailPage({ params }: { params: Promise<{ ticker:
       <main className="max-w-6xl mx-auto px-6 py-8 relative">
         {/* Navigation Breadcrumbs & Cross-Engine Links */}
         <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
-          <Link
-            href="/"
-            className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-slate-200 font-medium group transition-colors"
-          >
-            <span className="group-hover:-translate-x-1 transition-transform">&larr;</span> Back to Retail Momentum Feed
-          </Link>
+          {reportDate ? (
+            <Link
+              href="/stats"
+              className="inline-flex items-center gap-2 text-sm text-amber-400 hover:text-amber-300 font-semibold group transition-colors"
+            >
+              <span className="group-hover:-translate-x-1 transition-transform">&larr;</span> Historical Archive ({reportDate}) &bull; Back to Historical Reports
+            </Link>
+          ) : (
+            <Link
+              href="/"
+              className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-slate-200 font-medium group transition-colors"
+            >
+              <span className="group-hover:-translate-x-1 transition-transform">&larr;</span> Back to Retail Momentum Feed
+            </Link>
+          )}
 
           <div className="flex flex-wrap items-center gap-3">
             <Link
-              href={`/smart-money/${report.ticker}`}
+              href={`/smart-money/${report.ticker}${reportDate ? `?date=${reportDate}` : ""}`}
               className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-slate-900/80 hover:bg-slate-800 text-purple-300 hover:text-white border border-purple-500/30 transition-all"
             >
               <span>🏛️</span> View Smart Money Catalyst Report &rarr;
             </Link>
             <Link
-              href={`/report/${report.ticker}`}
+              href={`/report/${report.ticker}${reportDate ? `?date=${reportDate}` : ""}`}
               className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 hover:text-white border border-indigo-500/40 transition-all"
             >
               <span>⚡</span> View Unified Master Report &rarr;
@@ -202,6 +226,11 @@ export default function RetailDetailPage({ params }: { params: Promise<{ ticker:
                 <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
                   Rank #{report.rank || 1}
                 </span>
+                {reportDate && (
+                  <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-amber-500/10 text-amber-300 border border-amber-500/30">
+                    📅 Historical Run: {reportDate}
+                  </span>
+                )}
               </div>
               <p className="text-slate-400 text-sm font-medium">
                 {report.core_intel?.company_name || report.ticker} &bull; {report.core_intel?.sector || report.raw_metrics?.sector || "Technology"} &bull; {report.core_intel?.industry || report.raw_metrics?.industry || "General"}
@@ -411,12 +440,18 @@ export default function RetailDetailPage({ params }: { params: Promise<{ ticker:
 
         {/* Bottom Navigation */}
         <div className="pt-6 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-4">
-          <Link href="/" className="text-xs font-semibold text-slate-400 hover:text-slate-200 transition-colors">
-            &larr; Back to Retail Momentum Feed
-          </Link>
+          {reportDate ? (
+            <Link href="/stats" className="text-xs font-semibold text-amber-400 hover:text-amber-300 transition-colors">
+              &larr; Back to Historical Reports ({reportDate})
+            </Link>
+          ) : (
+            <Link href="/" className="text-xs font-semibold text-slate-400 hover:text-slate-200 transition-colors">
+              &larr; Back to Retail Momentum Feed
+            </Link>
+          )}
           <div className="flex items-center gap-3">
             <Link
-              href={`/report/${report.ticker}`}
+              href={`/report/${report.ticker}${reportDate ? `?date=${reportDate}` : ""}`}
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20 transition-all"
             >
               <span>⚡</span> Inspect Unified Master Report &rarr;
@@ -425,6 +460,23 @@ export default function RetailDetailPage({ params }: { params: Promise<{ ticker:
         </div>
       </main>
     </div>
+  );
+}
+
+export default function RetailDetailPage({ params }: { params: Promise<{ ticker: string }> }) {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center gap-4">
+          <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+          <p className="text-slate-400 text-sm font-medium animate-pulse">
+            Loading Retail Momentum Intelligence...
+          </p>
+        </div>
+      }
+    >
+      <RetailDetailContent params={params} />
+    </Suspense>
   );
 }
 

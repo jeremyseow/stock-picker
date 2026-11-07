@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import { RetailTrapIcon } from "@/components/RetailTrapIcon";
@@ -74,6 +74,62 @@ export default function HistoricalReportsPage() {
   const [loadingDates, setLoadingDates] = useState(true);
   const [loadingData, setLoadingData] = useState(false);
   const [error, setError] = useState("");
+
+  // Tab-specific filters
+  const [retailRecommendationFilter, setRetailRecommendationFilter] = useState<string>("ALL");
+  const [smartMoneyTierFilter, setSmartMoneyTierFilter] = useState<string>("ALL");
+  const [synthesisArchetypeFilter, setSynthesisArchetypeFilter] = useState<string>("ALL");
+
+  // Computed filter options & counts
+  const smartMoneyTiers = useMemo(() => {
+    const defaultTiers = [
+      "High Conviction Catalyst Buy",
+      "Moderate Cluster",
+      "Speculative Accumulation",
+    ];
+    const presentTiers = smartMoneyReports
+      .map((r) => r.conviction_tier)
+      .filter(Boolean);
+    return Array.from(new Set([...defaultTiers, ...presentTiers]));
+  }, [smartMoneyReports]);
+
+  const synthesisArchetypes = useMemo(() => {
+    const defaultArchetypes = [
+      "The Rocket",
+      "Silent Accumulation",
+      "The Retail Trap",
+      "Market Noise",
+    ];
+    const presentArchetypes = synthesisReports
+      .map((r) => r.archetype)
+      .filter(Boolean);
+    return Array.from(new Set([...defaultArchetypes, ...presentArchetypes]));
+  }, [synthesisReports]);
+
+  const filteredRetailReports = retailReports.filter((rep) => {
+    if (retailRecommendationFilter === "ALL") return true;
+    return rep.recommendation?.toUpperCase() === retailRecommendationFilter.toUpperCase();
+  });
+
+  const filteredSmartMoneyReports = smartMoneyReports.filter((rep) => {
+    if (smartMoneyTierFilter === "ALL") return true;
+    return rep.conviction_tier?.toLowerCase() === smartMoneyTierFilter.toLowerCase();
+  });
+
+  const filteredSynthesisReports = synthesisReports.filter((rec) => {
+    if (synthesisArchetypeFilter === "ALL") return true;
+    return rec.archetype?.toLowerCase() === synthesisArchetypeFilter.toLowerCase();
+  });
+
+  const buyCount = retailReports.filter((r) => r.recommendation === "BUY").length;
+  const holdCount = retailReports.filter((r) => r.recommendation === "HOLD").length;
+  const sellCount = retailReports.filter((r) => r.recommendation === "SELL").length;
+
+  const getTierCount = (tier: string) =>
+    smartMoneyReports.filter((r) => r.conviction_tier?.toLowerCase() === tier.toLowerCase()).length;
+
+  const getArchetypeCount = (arch: string) =>
+    synthesisReports.filter((r) => r.archetype?.toLowerCase() === arch.toLowerCase()).length;
 
   // Fetch available distinct report dates
   useEffect(() => {
@@ -279,7 +335,9 @@ export default function HistoricalReportsPage() {
                 activeTab === "retail" ? "bg-indigo-800 text-white" : "bg-slate-800 text-slate-400"
               }`}
             >
-              {retailReports.length}
+              {retailRecommendationFilter !== "ALL"
+                ? `${filteredRetailReports.length}/${retailReports.length}`
+                : retailReports.length}
             </span>
           </button>
 
@@ -297,7 +355,9 @@ export default function HistoricalReportsPage() {
                 activeTab === "smart-money" ? "bg-indigo-800 text-white" : "bg-slate-800 text-slate-400"
               }`}
             >
-              {smartMoneyReports.length}
+              {smartMoneyTierFilter !== "ALL"
+                ? `${filteredSmartMoneyReports.length}/${smartMoneyReports.length}`
+                : smartMoneyReports.length}
             </span>
           </button>
 
@@ -315,7 +375,9 @@ export default function HistoricalReportsPage() {
                 activeTab === "synthesis" ? "bg-indigo-800 text-white" : "bg-slate-800 text-slate-400"
               }`}
             >
-              {synthesisReports.length}
+              {synthesisArchetypeFilter !== "ALL"
+                ? `${filteredSynthesisReports.length}/${synthesisReports.length}`
+                : synthesisReports.length}
             </span>
           </button>
         </div>
@@ -342,8 +404,108 @@ export default function HistoricalReportsPage() {
                 </div>
               ) : (
                 <div className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {retailReports.map((rep) => {
+                  {/* Retail Recommendation Filter Bar */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-900/40 border border-slate-800/80 backdrop-blur-sm">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mr-1 flex items-center gap-1.5">
+                        <span>🎯</span> Filter Recommendation:
+                      </span>
+                      <button
+                        onClick={() => setRetailRecommendationFilter("ALL")}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                          retailRecommendationFilter === "ALL"
+                            ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30"
+                            : "bg-slate-950/60 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800"
+                        }`}
+                      >
+                        All
+                        <span
+                          className={`px-1.5 py-0.5 rounded-full text-[10px] ${
+                            retailRecommendationFilter === "ALL" ? "bg-indigo-800 text-white" : "bg-slate-900 text-slate-500"
+                          }`}
+                        >
+                          {retailReports.length}
+                        </span>
+                      </button>
+                      <button
+                        onClick={() => setRetailRecommendationFilter("BUY")}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                          retailRecommendationFilter === "BUY"
+                            ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/30"
+                            : "bg-slate-950/60 text-slate-400 hover:text-emerald-400 hover:bg-slate-800 border border-slate-800"
+                        }`}
+                      >
+                        <span>🟢</span> BUY
+                        <span
+                          className={`px-1.5 py-0.5 rounded-full text-[10px] ${
+                            retailRecommendationFilter === "BUY" ? "bg-emerald-800 text-white" : "bg-slate-900 text-slate-500"
+                          }`}
+                        >
+                          {buyCount}
+                        </span>
+                      </button>
+                      <button
+                        onClick={() => setRetailRecommendationFilter("HOLD")}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                          retailRecommendationFilter === "HOLD"
+                            ? "bg-amber-600 text-white shadow-md shadow-amber-600/30"
+                            : "bg-slate-950/60 text-slate-400 hover:text-amber-400 hover:bg-slate-800 border border-slate-800"
+                        }`}
+                      >
+                        <span>🟡</span> HOLD
+                        <span
+                          className={`px-1.5 py-0.5 rounded-full text-[10px] ${
+                            retailRecommendationFilter === "HOLD" ? "bg-amber-800 text-white" : "bg-slate-900 text-slate-500"
+                          }`}
+                        >
+                          {holdCount}
+                        </span>
+                      </button>
+                      <button
+                        onClick={() => setRetailRecommendationFilter("SELL")}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                          retailRecommendationFilter === "SELL"
+                            ? "bg-rose-600 text-white shadow-md shadow-rose-600/30"
+                            : "bg-slate-950/60 text-slate-400 hover:text-rose-400 hover:bg-slate-800 border border-slate-800"
+                        }`}
+                      >
+                        <span>🔴</span> SELL
+                        <span
+                          className={`px-1.5 py-0.5 rounded-full text-[10px] ${
+                            retailRecommendationFilter === "SELL" ? "bg-rose-800 text-white" : "bg-slate-900 text-slate-500"
+                          }`}
+                        >
+                          {sellCount}
+                        </span>
+                      </button>
+                    </div>
+
+                    {retailRecommendationFilter !== "ALL" && (
+                      <button
+                        onClick={() => setRetailRecommendationFilter("ALL")}
+                        className="text-xs text-indigo-400 hover:text-indigo-300 font-medium transition-colors"
+                      >
+                        Reset Filter &times;
+                      </button>
+                    )}
+                  </div>
+
+                  {filteredRetailReports.length === 0 ? (
+                    <div className="text-center py-16 bg-slate-900/30 border border-slate-800/80 rounded-2xl p-8">
+                      <span className="text-2xl block mb-2">🔍</span>
+                      <p className="text-slate-300 font-semibold text-sm">
+                        No Retail Momentum reports matching recommendation &ldquo;{retailRecommendationFilter}&rdquo; on {selectedDate}.
+                      </p>
+                      <button
+                        onClick={() => setRetailRecommendationFilter("ALL")}
+                        className="mt-3 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-colors"
+                      >
+                        Clear Filter
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {filteredRetailReports.map((rep) => {
                       const upside =
                         rep.current_price && rep.target_price
                           ? (((rep.target_price - rep.current_price) / rep.current_price) * 100).toFixed(1)
@@ -431,7 +593,7 @@ export default function HistoricalReportsPage() {
                               📊 View Trajectory & Analytics &rarr;
                             </Link>
                             <Link
-                              href={`/retail/${rep.ticker}`}
+                              href={`/retail/${rep.ticker}${selectedDate ? `?date=${selectedDate}` : ""}`}
                               className="inline-flex items-center gap-1 text-xs font-bold text-indigo-400 hover:text-indigo-300 transition-colors"
                             >
                               View Retail Momentum Report &rarr;
@@ -441,9 +603,10 @@ export default function HistoricalReportsPage() {
                       );
                     })}
                   </div>
-                </div>
-              )
-            )}
+                )}
+              </div>
+            )
+          )}
 
             {/* TAB 2: SMART MONEY & GOV */}
             {activeTab === "smart-money" && (
@@ -455,8 +618,81 @@ export default function HistoricalReportsPage() {
                 </div>
               ) : (
                 <div className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {smartMoneyReports.map((rep) => (
+                  {/* Smart Money Conviction Tier Filter Bar */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-900/40 border border-slate-800/80 backdrop-blur-sm">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mr-1 flex items-center gap-1.5">
+                        <span>🏛️</span> Filter Identification:
+                      </span>
+                      <button
+                        onClick={() => setSmartMoneyTierFilter("ALL")}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                          smartMoneyTierFilter === "ALL"
+                            ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30"
+                            : "bg-slate-950/60 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800"
+                        }`}
+                      >
+                        All
+                        <span
+                          className={`px-1.5 py-0.5 rounded-full text-[10px] ${
+                            smartMoneyTierFilter === "ALL" ? "bg-indigo-800 text-white" : "bg-slate-900 text-slate-500"
+                          }`}
+                        >
+                          {smartMoneyReports.length}
+                        </span>
+                      </button>
+                      {smartMoneyTiers.map((tier) => {
+                        const count = getTierCount(tier);
+                        const isSelected = smartMoneyTierFilter.toLowerCase() === tier.toLowerCase();
+                        return (
+                          <button
+                            key={tier}
+                            onClick={() => setSmartMoneyTierFilter(tier)}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                              isSelected
+                                ? "bg-purple-600 text-white shadow-md shadow-purple-600/30"
+                                : "bg-slate-950/60 text-slate-400 hover:text-purple-300 hover:bg-slate-800 border border-slate-800"
+                            }`}
+                          >
+                            <span>💎</span> {tier}
+                            <span
+                              className={`px-1.5 py-0.5 rounded-full text-[10px] ${
+                                isSelected ? "bg-purple-800 text-white" : "bg-slate-900 text-slate-500"
+                              }`}
+                            >
+                              {count}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {smartMoneyTierFilter !== "ALL" && (
+                      <button
+                        onClick={() => setSmartMoneyTierFilter("ALL")}
+                        className="text-xs text-indigo-400 hover:text-indigo-300 font-medium transition-colors"
+                      >
+                        Reset Filter &times;
+                      </button>
+                    )}
+                  </div>
+
+                  {filteredSmartMoneyReports.length === 0 ? (
+                    <div className="text-center py-16 bg-slate-900/30 border border-slate-800/80 rounded-2xl p-8">
+                      <span className="text-2xl block mb-2">🔍</span>
+                      <p className="text-slate-300 font-semibold text-sm">
+                        No Smart Money reports matching conviction tier &ldquo;{smartMoneyTierFilter}&rdquo; on {selectedDate}.
+                      </p>
+                      <button
+                        onClick={() => setSmartMoneyTierFilter("ALL")}
+                        className="mt-3 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-colors"
+                      >
+                        Clear Filter
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {filteredSmartMoneyReports.map((rep) => (
                       <div
                         key={rep.id}
                         className="group bg-slate-900/40 border border-slate-800/80 hover:border-slate-700/80 rounded-2xl p-6 transition-all duration-300 hover:shadow-xl hover:shadow-indigo-500/5 flex flex-col justify-between backdrop-blur-sm"
@@ -517,7 +753,7 @@ export default function HistoricalReportsPage() {
                             📊 View Trajectory & Analytics &rarr;
                           </Link>
                           <Link
-                            href={`/smart-money/${rep.ticker}`}
+                            href={`/smart-money/${rep.ticker}${selectedDate ? `?date=${selectedDate}` : ""}`}
                             className="inline-flex items-center gap-1 text-xs font-bold text-indigo-400 hover:text-indigo-300 transition-colors"
                           >
                             View Smart Money Catalyst Report &rarr;
@@ -526,9 +762,10 @@ export default function HistoricalReportsPage() {
                       </div>
                     ))}
                   </div>
-                </div>
-              )
-            )}
+                )}
+              </div>
+            )
+          )}
 
             {/* TAB 3: SYNTHESIS MATRIX */}
             {activeTab === "synthesis" && (
@@ -540,8 +777,90 @@ export default function HistoricalReportsPage() {
                 </div>
               ) : (
                 <div className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {synthesisReports.map((rec) => (
+                  {/* Synthesis Archetype Filter Bar */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-900/40 border border-slate-800/80 backdrop-blur-sm">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mr-1 flex items-center gap-1.5">
+                        <span>⚡</span> Filter Archetype:
+                      </span>
+                      <button
+                        onClick={() => setSynthesisArchetypeFilter("ALL")}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                          synthesisArchetypeFilter === "ALL"
+                            ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30"
+                            : "bg-slate-950/60 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800"
+                        }`}
+                      >
+                        All
+                        <span
+                          className={`px-1.5 py-0.5 rounded-full text-[10px] ${
+                            synthesisArchetypeFilter === "ALL" ? "bg-indigo-800 text-white" : "bg-slate-900 text-slate-500"
+                          }`}
+                        >
+                          {synthesisReports.length}
+                        </span>
+                      </button>
+                      {synthesisArchetypes.map((arch) => {
+                        const count = getArchetypeCount(arch);
+                        const isSelected = synthesisArchetypeFilter.toLowerCase() === arch.toLowerCase();
+                        return (
+                          <button
+                            key={arch}
+                            onClick={() => setSynthesisArchetypeFilter(arch)}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                              isSelected
+                                ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30"
+                                : "bg-slate-950/60 text-slate-400 hover:text-indigo-300 hover:bg-slate-800 border border-slate-800"
+                            }`}
+                          >
+                            {arch === "The Retail Trap" ? (
+                              <RetailTrapIcon className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                            ) : arch === "The Rocket" ? (
+                              <span>🚀</span>
+                            ) : arch === "Silent Accumulation" ? (
+                              <span>🤫</span>
+                            ) : (
+                              <span>📢</span>
+                            )}
+                            {arch}
+                            <span
+                              className={`px-1.5 py-0.5 rounded-full text-[10px] ${
+                                isSelected ? "bg-indigo-800 text-white" : "bg-slate-900 text-slate-500"
+                              }`}
+                            >
+                              {count}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {synthesisArchetypeFilter !== "ALL" && (
+                      <button
+                        onClick={() => setSynthesisArchetypeFilter("ALL")}
+                        className="text-xs text-indigo-400 hover:text-indigo-300 font-medium transition-colors"
+                      >
+                        Reset Filter &times;
+                      </button>
+                    )}
+                  </div>
+
+                  {filteredSynthesisReports.length === 0 ? (
+                    <div className="text-center py-16 bg-slate-900/30 border border-slate-800/80 rounded-2xl p-8">
+                      <span className="text-2xl block mb-2">🔍</span>
+                      <p className="text-slate-300 font-semibold text-sm">
+                        No Synthesis Matrix records matching archetype &ldquo;{synthesisArchetypeFilter}&rdquo; on {selectedDate}.
+                      </p>
+                      <button
+                        onClick={() => setSynthesisArchetypeFilter("ALL")}
+                        className="mt-3 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-colors"
+                      >
+                        Clear Filter
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {filteredSynthesisReports.map((rec) => (
                       <div
                         key={rec.id}
                         className="group bg-slate-900/40 border border-slate-800/80 hover:border-slate-700/80 rounded-2xl p-6 transition-all duration-300 hover:shadow-xl hover:shadow-indigo-500/5 flex flex-col justify-between backdrop-blur-sm"
@@ -589,7 +908,7 @@ export default function HistoricalReportsPage() {
                             📊 View Trajectory & Analytics &rarr;
                           </Link>
                           <Link
-                            href={`/report/${rec.ticker}`}
+                            href={`/report/${rec.ticker}${selectedDate ? `?date=${selectedDate}` : ""}`}
                             className="inline-flex items-center gap-1 text-xs font-bold text-indigo-400 hover:text-indigo-300 transition-colors"
                           >
                             View Unified Master Report &rarr;
@@ -598,9 +917,10 @@ export default function HistoricalReportsPage() {
                       </div>
                     ))}
                   </div>
-                </div>
-              )
-            )}
+                )}
+              </div>
+            )
+          )}
           </>
         )}
       </main>

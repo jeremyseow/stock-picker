@@ -126,33 +126,53 @@ export default function Home() {
 
       {/* Main Body Content */}
       <main className="max-w-6xl mx-auto px-6 py-12 relative">
-        <div className="text-center max-w-2xl mx-auto mb-16">
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 mb-4 animate-pulse">
-            ✨ AI-Powered Market intelligence
-          </span>
-          <h1 className="text-4xl md:text-5xl font-black tracking-tight text-white mb-4 leading-tight">
-            Trending Reddit Stocks
-          </h1>
-          <p className="text-slate-400 text-lg">
-            Daily extraction and AI reconciliation from r/wallstreetbets. Filtered by live exchange pricing to ensure tradeable securities only.
-          </p>
-          {runDate && (
-            <div
-              id="latest-run-date"
-              className={`inline-flex items-center gap-2 mt-6 px-4 py-1.5 rounded-full text-sm font-medium border ${
-                isStale
-                  ? "bg-amber-500/10 text-amber-300 border-amber-500/20"
-                  : "bg-emerald-500/10 text-emerald-300 border-emerald-500/20"
-              }`}
-            >
-              <span className={`w-2 h-2 rounded-full ${isStale ? "bg-amber-400" : "bg-emerald-400 animate-pulse"}`} />
-              Picks from run on{" "}
-              <time dateTime={runDate.toISOString()} className="font-bold">
-                {runDate.toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" })}
-              </time>
-              {isStale && <span className="text-amber-400/80">({runAgeDays} day{runAgeDays === 1 ? "" : "s"} ago)</span>}
+        {/* Header */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10 pb-6 border-b border-slate-800/80">
+          <div>
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 mb-3">
+              <span>📱</span> Engine 1: Retail Momentum Scout
             </div>
-          )}
+            <h1 className="text-3xl sm:text-4xl font-black text-white tracking-tight">
+              Trending Reddit Stocks
+            </h1>
+            <p className="text-slate-400 text-sm mt-2 max-w-2xl leading-relaxed">
+              Daily extraction and AI reconciliation from r/wallstreetbets, r/stocks, and r/ValueInvesting. Filtered by live exchange pricing to ensure tradeable securities only.
+            </p>
+            {runDate && (
+              <div
+                id="latest-run-date"
+                className={`inline-flex items-center gap-2 mt-4 px-4 py-1.5 rounded-full text-sm font-medium border ${
+                  isStale
+                    ? "bg-amber-500/10 text-amber-300 border-amber-500/20"
+                    : "bg-emerald-500/10 text-emerald-300 border-emerald-500/20"
+                }`}
+              >
+                <span className={`w-2 h-2 rounded-full ${isStale ? "bg-amber-400" : "bg-emerald-400 animate-pulse"}`} />
+                Picks from run on{" "}
+                <time dateTime={runDate.toISOString()} className="font-bold">
+                  {runDate.toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" })}
+                </time>
+                {isStale && <span className="text-amber-400/80">({runAgeDays} day{runAgeDays === 1 ? "" : "s"} ago)</span>}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <button
+              onClick={handleTriggerRun}
+              disabled={running}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/20 transition-all disabled:opacity-50 cursor-pointer active:scale-95"
+            >
+              {running ? (
+                <>
+                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Analyzing Buzz...
+                </>
+              ) : (
+                <>⚡ Run Retail Pipeline</>
+              )}
+            </button>
+          </div>
         </div>
 
         {loading && (

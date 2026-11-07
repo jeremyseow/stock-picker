@@ -91,7 +91,20 @@ async def app_client():
             recommendation="BUY",
             recommendation_rationale="Commercial momentum outpaces valuation headwind"
         )
-        session.add(rr1)
+        # Yesterday retail report (for date filter testing)
+        rr0 = RetailReport(
+            ticker="PLTR",
+            date=yesterday,
+            rank=2,
+            mention_count=15,
+            engagement_score=20.0,
+            core_intel_id=c1.id,
+            community_sentiment="50% Neutral",
+            community_hype="Early social mentions",
+            recommendation="HOLD",
+            recommendation_rationale="Early accumulation phase"
+        )
+        session.add_all([rr1, rr0])
 
         # Smart money report
         smt1 = SmartMoneyTicker(
@@ -124,7 +137,20 @@ async def app_client():
             catalyst_horizon="1-3 Months",
             actionable_thesis="Follow institutional cluster ahead of contract cycle"
         )
-        session.add(smr1)
+        # Yesterday smart money report (for date filter testing)
+        smr0 = SmartMoneyReport(
+            ticker="PLTR",
+            date=yesterday,
+            core_intel_id=c1.id,
+            conviction_tier="Moderate Cluster",
+            cluster_count=1,
+            total_buy_volume=2000000.0,
+            top_buyer_summary="Single director purchase",
+            inflow_ledger=[],
+            catalyst_horizon="6 Months",
+            actionable_thesis="Preliminary accumulation"
+        )
+        session.add_all([smr1, smr0])
 
         # Smart-Money only ticker without retail report (e.g. ACN)
         c_acn = CoreEquityIntel(
@@ -402,3 +428,48 @@ async def test_api_smart_money_only_ticker_analytics(app_client: AsyncClient):
     assert data[0]["target_price"] == 330.00
     assert data[0]["recommendation"] == "BUY"
     assert data[0]["smart_money_verdict"] == "Tier-1 Alpha"
+
+
+@pytest.mark.asyncio
+async def test_api_detail_endpoints_with_date_filter(app_client: AsyncClient):
+    """Verify that detail endpoints for Retail, Smart Money, and Master Report respect the ?date= query parameter."""
+    # 1. Retail Detail Endpoint
+    # Latest / without date -> returns 2026-11-01 BUY
+    res_latest_retail = await app_client.get("/api/retail/report/PLTR")
+    assert res_latest_retail.status_code == 200
+    assert res_latest_retail.json()["recommendation"] == "BUY"
+
+    # Specific historical date 2026-10-31 -> returns HOLD
+    res_hist_retail = await app_client.get("/api/retail/report/PLTR?date=2026-10-31")
+    assert res_hist_retail.status_code == 200
+    assert res_hist_retail.json()["recommendation"] == "HOLD"
+    assert res_hist_retail.json()["date"].startswith("2026-10-31")
+
+    # Non-existent date -> 404
+    res_404_retail = await app_client.get("/api/retail/report/PLTR?date=2025-01-01")
+    assert res_404_retail.status_code == 404
+
+    # 2. Smart Money Detail Endpoint
+    # Latest -> Tier-1 Alpha
+    res_latest_sm = await app_client.get("/api/smart-money/report/PLTR")
+    assert res_latest_sm.status_code == 200
+    assert res_latest_sm.json()["conviction_tier"] == "Tier-1 Alpha"
+
+    # Historical date 2026-10-31 -> Moderate Cluster
+    res_hist_sm = await app_client.get("/api/smart-money/report/PLTR?date=2026-10-31")
+    assert res_hist_sm.status_code == 200
+    assert res_hist_sm.json()["conviction_tier"] == "Moderate Cluster"
+    assert res_hist_sm.json()["date"].startswith("2026-10-31")
+
+    # 3. Master Report Endpoint
+    # Latest -> archetype "The Rocket"
+    res_latest_master = await app_client.get("/api/master/report/PLTR")
+    assert res_latest_master.status_code == 200
+    assert res_latest_master.json()["synthesis"]["archetype"] == "The Rocket"
+
+    # Historical date 2026-10-31 -> archetype "Silent Accumulation"
+    res_hist_master = await app_client.get("/api/master/report/PLTR?date=2026-10-31")
+    assert res_hist_master.status_code == 200
+    assert res_hist_master.json()["synthesis"]["archetype"] == "Silent Accumulation"
+    assert res_hist_master.json()["recommendation"] == "HOLD"
+    assert res_hist_master.json()["smart_money_overlay"]["conviction_tier"] == "Moderate Cluster"

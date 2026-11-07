@@ -18,15 +18,20 @@ from app.crud import (
     save_trajectory_analysis,
     get_latest_smart_money_tickers,
     get_latest_smart_money_report,
+    get_smart_money_report_by_ticker,
     get_smart_money_reports_by_date,
     get_latest_synthesis_records,
     get_synthesis_records_by_date,
     get_synthesis_record_by_ticker,
     get_ticker_archetype_history,
     get_latest_core_equity_intel,
+    get_core_equity_intel_by_ticker,
+    get_core_equity_intel_by_id,
     get_latest_retail_report,
+    get_retail_report_by_ticker,
     get_latest_options_whale_tickers,
     get_latest_options_whale_report,
+    get_options_whale_report_by_ticker,
     get_options_reports_by_date,
     get_latest_model_calibration_run,
 )
@@ -160,13 +165,23 @@ async def get_reports_by_query(
 
 
 @app.get("/api/retail/report/{ticker}")
-async def get_retail_report_detail(ticker: str, db: AsyncSession = Depends(get_db)):
+async def get_retail_report_detail(
+    ticker: str,
+    date: str | None = Query(None, description="Report date in YYYY-MM-DD format"),
+    db: AsyncSession = Depends(get_db)
+):
     """Get detailed retail momentum report for a ticker, including linked core equity intel."""
     ticker_sym = TICKER_ALIASES.get(ticker.upper(), ticker.upper())
-    retail_rep = await get_latest_retail_report(db, ticker_sym)
+    retail_rep = await get_retail_report_by_ticker(db, ticker_sym, date)
     if not retail_rep:
-        raise HTTPException(status_code=404, detail=f"No retail report found for ${ticker_sym}")
-    core_intel = await get_latest_core_equity_intel(db, ticker_sym)
+        date_msg = f" on {date}" if date else ""
+        raise HTTPException(status_code=404, detail=f"No retail report found for ${ticker_sym}{date_msg}")
+    
+    core_intel = None
+    if retail_rep.core_intel_id:
+        core_intel = await get_core_equity_intel_by_id(db, retail_rep.core_intel_id)
+    if not core_intel:
+        core_intel = await get_core_equity_intel_by_ticker(db, ticker_sym, date)
 
     return {
         "id": retail_rep.id,
@@ -199,16 +214,31 @@ async def get_retail_report_detail(ticker: str, db: AsyncSession = Depends(get_d
 
 
 @app.get("/api/master/report/{ticker}")
-async def get_ticker_report(ticker: str, db: AsyncSession = Depends(get_db)):
+async def get_ticker_report(
+    ticker: str,
+    date: str | None = Query(None, description="Report date in YYYY-MM-DD format"),
+    db: AsyncSession = Depends(get_db)
+):
     """Get the unified master report for a specific ticker across all engines."""
     ticker_sym = TICKER_ALIASES.get(ticker.upper(), ticker.upper())
-    core_intel = await get_latest_core_equity_intel(db, ticker_sym)
-    retail_rep = await get_latest_retail_report(db, ticker_sym)
-    smart_money_rep = await get_latest_smart_money_report(db, ticker_sym)
-    synthesis_rec = await get_synthesis_record_by_ticker(db, ticker_sym)
+    retail_rep = await get_retail_report_by_ticker(db, ticker_sym, date)
+    smart_money_rep = await get_smart_money_report_by_ticker(db, ticker_sym, date)
+    synthesis_rec = await get_synthesis_record_by_ticker(db, ticker_sym, date)
 
-    if not core_intel and not retail_rep and not smart_money_rep:
-        raise HTTPException(status_code=404, detail=f"Report for ${ticker_sym} not found")
+    core_intel_id = (
+        (retail_rep and retail_rep.core_intel_id)
+        or (smart_money_rep and smart_money_rep.core_intel_id)
+        or (synthesis_rec and synthesis_rec.core_intel_id)
+    )
+    core_intel = None
+    if core_intel_id:
+        core_intel = await get_core_equity_intel_by_id(db, core_intel_id)
+    if not core_intel:
+        core_intel = await get_core_equity_intel_by_ticker(db, ticker_sym, date)
+
+    if not core_intel and not retail_rep and not smart_money_rep and not synthesis_rec:
+        date_msg = f" on {date}" if date else ""
+        raise HTTPException(status_code=404, detail=f"Report for ${ticker_sym}{date_msg} not found")
 
     company_name = (core_intel and core_intel.company_name) or (smart_money_rep and smart_money_rep.company_name) or ticker_sym
     sector = (core_intel and core_intel.sector) or (smart_money_rep and smart_money_rep.sector) or "General"
@@ -237,7 +267,7 @@ async def get_ticker_report(ticker: str, db: AsyncSession = Depends(get_db)):
     if current_price and target_price and current_price > 0:
         potential_upside = ((target_price - current_price) / current_price) * 100
 
-    report_date = (core_intel and core_intel.date) or (retail_rep and retail_rep.date) or (smart_money_rep and smart_money_rep.date)
+    report_date = (core_intel and core_intel.date) or (retail_rep and retail_rep.date) or (smart_money_rep and smart_money_rep.date) or (synthesis_rec and synthesis_rec.date)
 
     return {
         "id": (retail_rep and retail_rep.id) or (smart_money_rep and smart_money_rep.id) or (core_intel and core_intel.id),
@@ -585,14 +615,23 @@ async def get_today_smart_money(db: AsyncSession = Depends(get_db)):
 
 
 @app.get("/api/smart-money/report/{ticker}")
-async def get_smart_money_report_detail(ticker: str, db: AsyncSession = Depends(get_db)):
+async def get_smart_money_report_detail(
+    ticker: str,
+    date: str | None = Query(None, description="Report date in YYYY-MM-DD format"),
+    db: AsyncSession = Depends(get_db)
+):
     """Fetch detailed smart money catalyst report, inflow ledger, and linked core equity intelligence."""
     ticker_sym = TICKER_ALIASES.get(ticker.upper(), ticker.upper())
-    rep = await get_latest_smart_money_report(db, ticker_sym)
+    rep = await get_smart_money_report_by_ticker(db, ticker_sym, date)
     if not rep:
-        raise HTTPException(status_code=404, detail=f"No smart money report found for ${ticker_sym}")
+        date_msg = f" on {date}" if date else ""
+        raise HTTPException(status_code=404, detail=f"No smart money report found for ${ticker_sym}{date_msg}")
     
-    core_intel = await get_latest_core_equity_intel(db, ticker_sym)
+    core_intel = None
+    if rep.core_intel_id:
+        core_intel = await get_core_equity_intel_by_id(db, rep.core_intel_id)
+    if not core_intel:
+        core_intel = await get_core_equity_intel_by_ticker(db, ticker_sym, date)
 
     inflow_ledger = []
     for item in (rep.inflow_ledger or []):
@@ -801,13 +840,22 @@ async def get_options_reports(date: str = Query(..., description="Target date in
 
 
 @app.get("/api/options/report/{ticker}")
-async def get_individual_options_report(ticker: str, db: AsyncSession = Depends(get_db)):
+async def get_individual_options_report(
+    ticker: str,
+    date: str | None = Query(None, description="Report date in YYYY-MM-DD format"),
+    db: AsyncSession = Depends(get_db)
+):
     """Returns the detailed options flow report for a specific ticker."""
-    rep = await get_latest_options_whale_report(db, ticker)
-    core = await get_latest_core_equity_intel(db, ticker)
+    rep = await get_options_whale_report_by_ticker(db, ticker, date)
+    core = None
+    if rep and rep.core_intel_id:
+        core = await get_core_equity_intel_by_id(db, rep.core_intel_id)
+    if not core:
+        core = await get_core_equity_intel_by_ticker(db, ticker, date)
 
     if not rep and not core:
-        raise HTTPException(status_code=404, detail=f"No options flow data found for ${ticker.upper()}")
+        date_msg = f" on {date}" if date else ""
+        raise HTTPException(status_code=404, detail=f"No options flow data found for ${ticker.upper()}{date_msg}")
 
     curr_p = (rep.current_price if rep else None) or (core.current_price if core else None)
     targ_p = (rep.target_price if rep else None) or (core.target_price if core else None)

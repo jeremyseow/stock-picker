@@ -99,6 +99,11 @@ export default function SynthesisPage() {
     );
   };
 
+  // Backend stores naive UTC timestamps (no "Z"); mark them as UTC so they convert to local time.
+  const runDate = records.length > 0 ? new Date(records[0].date.endsWith("Z") ? records[0].date : `${records[0].date}Z`) : null;
+  const runAgeDays = runDate ? Math.floor((Date.now() - runDate.getTime()) / 86_400_000) : 0;
+  const isStale = runAgeDays >= 1;
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased selection:bg-indigo-500/30 selection:text-indigo-200">
       {/* Background Glow */}
@@ -108,16 +113,44 @@ export default function SynthesisPage() {
 
       <main className="max-w-6xl mx-auto px-6 py-12 relative">
         {/* Header */}
-        <div className="mb-10 pb-6 border-b border-slate-800/80">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-purple-500/10 text-purple-400 border border-purple-500/20 mb-3">
-            <span>⚡</span> Cross-Engine Synthesis Hub
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10 pb-6 border-b border-slate-800/80">
+          <div>
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-purple-500/10 text-purple-400 border border-purple-500/20 mb-3">
+              <span>⚡</span> Cross-Engine Synthesis Hub
+            </div>
+            <h1 className="text-3xl sm:text-4xl font-black text-white tracking-tight">
+              Market Divergence & Archetype Matrix
+            </h1>
+            <p className="text-slate-400 text-sm mt-2 max-w-2xl leading-relaxed">
+              Reconciles retail momentum from Reddit with institutional positioning from SEC Form 4 and Congressional filings.
+            </p>
+            {runDate && (
+              <div
+                id="latest-run-date"
+                className={`inline-flex items-center gap-2 mt-4 px-4 py-1.5 rounded-full text-sm font-medium border ${
+                  isStale
+                    ? "bg-amber-500/10 text-amber-300 border-amber-500/20"
+                    : "bg-emerald-500/10 text-emerald-300 border-emerald-500/20"
+                }`}
+              >
+                <span className={`w-2 h-2 rounded-full ${isStale ? "bg-amber-400" : "bg-emerald-400 animate-pulse"}`} />
+                Picks from run on{" "}
+                <time dateTime={runDate.toISOString()} className="font-bold">
+                  {runDate.toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" })}
+                </time>
+                {isStale && <span className="text-amber-400/80">({runAgeDays} day{runAgeDays === 1 ? "" : "s"} ago)</span>}
+              </div>
+            )}
           </div>
-          <h1 className="text-3xl sm:text-4xl font-black text-white tracking-tight">
-            Market Divergence & Archetype Matrix
-          </h1>
-          <p className="text-slate-400 text-sm mt-2 max-w-2xl leading-relaxed">
-            Reconciles retail momentum from Reddit with institutional positioning from SEC Form 4 and Congressional filings.
-          </p>
+
+          <div>
+            <Link
+              href="/stats"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold bg-slate-900/80 hover:bg-slate-800 text-purple-300 hover:text-white border border-purple-500/30 transition-all shadow-lg shadow-purple-500/5"
+            >
+              <span>📊</span> Historical Synthesis Archive &rarr;
+            </Link>
+          </div>
         </div>
 
         {/* 4 Archetype Guide Legend */}

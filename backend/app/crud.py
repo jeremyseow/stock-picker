@@ -75,6 +75,32 @@ async def get_latest_core_equity_intel(db: AsyncSession, ticker: str) -> CoreEqu
     return result.scalar_one_or_none()
 
 
+async def get_core_equity_intel_by_ticker(
+    db: AsyncSession, ticker: str, date_str: str | None = None
+) -> CoreEquityIntel | None:
+    """Fetch Core Equity Intel record for a ticker, optionally on a specific date or as of that date."""
+    if date_str:
+        query_exact = (
+            select(CoreEquityIntel)
+            .where(CoreEquityIntel.ticker == ticker.upper(), func.date(CoreEquityIntel.date) == date_str)
+            .order_by(desc(CoreEquityIntel.date))
+            .limit(1)
+        )
+        exact = (await db.execute(query_exact)).scalar_one_or_none()
+        if exact:
+            return exact
+
+        query_asof = (
+            select(CoreEquityIntel)
+            .where(CoreEquityIntel.ticker == ticker.upper(), func.date(CoreEquityIntel.date) <= date_str)
+            .order_by(desc(CoreEquityIntel.date))
+            .limit(1)
+        )
+        return (await db.execute(query_asof)).scalar_one_or_none()
+
+    return await get_latest_core_equity_intel(db, ticker)
+
+
 async def get_core_equity_intel_by_id(db: AsyncSession, intel_id: int) -> CoreEquityIntel | None:
     """Fetch a Core Equity Intel record by ID."""
     query = select(CoreEquityIntel).where(CoreEquityIntel.id == intel_id)
@@ -281,6 +307,22 @@ async def get_latest_retail_report(db: AsyncSession, ticker: str) -> RetailRepor
     return result.scalar_one_or_none()
 
 
+async def get_retail_report_by_ticker(
+    db: AsyncSession, ticker: str, date_str: str | None = None
+) -> RetailReport | None:
+    """Fetch Retail report for a ticker, optionally on a specific date."""
+    if date_str:
+        query = (
+            select(RetailReport)
+            .where(RetailReport.ticker == ticker.upper(), func.date(RetailReport.date) == date_str)
+            .order_by(desc(RetailReport.date))
+            .limit(1)
+        )
+        result = await db.execute(query)
+        return result.scalar_one_or_none()
+    return await get_latest_retail_report(db, ticker)
+
+
 # ==========================================
 # Trajectory Meta-Analysis CRUD
 # ==========================================
@@ -416,6 +458,22 @@ async def get_latest_smart_money_report(db: AsyncSession, ticker: str) -> SmartM
     return result.scalar_one_or_none()
 
 
+async def get_smart_money_report_by_ticker(
+    db: AsyncSession, ticker: str, date_str: str | None = None
+) -> SmartMoneyReport | None:
+    """Fetch Smart Money report for a ticker, optionally on a specific date."""
+    if date_str:
+        query = (
+            select(SmartMoneyReport)
+            .where(SmartMoneyReport.ticker == ticker.upper(), func.date(SmartMoneyReport.date) == date_str)
+            .order_by(desc(SmartMoneyReport.date))
+            .limit(1)
+        )
+        result = await db.execute(query)
+        return result.scalar_one_or_none()
+    return await get_latest_smart_money_report(db, ticker)
+
+
 async def get_smart_money_reports_by_date(db: AsyncSession, date_str: str) -> list[SmartMoneyReport]:
     """Fetch all Smart Money reports generated on a specific date (YYYY-MM-DD)."""
     query = (
@@ -511,8 +569,19 @@ async def get_synthesis_records_by_date(db: AsyncSession, date_str: str) -> list
     return deduped
 
 
-async def get_synthesis_record_by_ticker(db: AsyncSession, ticker: str) -> SynthesisRecord | None:
-    """Retrieve the latest synthesis record for a ticker."""
+async def get_synthesis_record_by_ticker(
+    db: AsyncSession, ticker: str, date_str: str | None = None
+) -> SynthesisRecord | None:
+    """Retrieve the synthesis record for a ticker, optionally on a specific date."""
+    if date_str:
+        query = (
+            select(SynthesisRecord)
+            .where(SynthesisRecord.ticker == ticker.upper(), func.date(SynthesisRecord.date) == date_str)
+            .order_by(desc(SynthesisRecord.date))
+            .limit(1)
+        )
+        result = await db.execute(query)
+        return result.scalar_one_or_none()
     query = (
         select(SynthesisRecord)
         .where(SynthesisRecord.ticker == ticker.upper())
@@ -633,6 +702,22 @@ async def get_latest_options_whale_report(db: AsyncSession, ticker: str) -> Opti
     )
     result = await db.execute(query)
     return result.scalar_one_or_none()
+
+
+async def get_options_whale_report_by_ticker(
+    db: AsyncSession, ticker: str, date_str: str | None = None
+) -> OptionsWhaleReport | None:
+    """Fetch Options Whale report for a ticker, optionally on a specific date."""
+    if date_str:
+        query = (
+            select(OptionsWhaleReport)
+            .where(OptionsWhaleReport.ticker == ticker.upper(), func.date(OptionsWhaleReport.date) == date_str)
+            .order_by(desc(OptionsWhaleReport.date))
+            .limit(1)
+        )
+        result = await db.execute(query)
+        return result.scalar_one_or_none()
+    return await get_latest_options_whale_report(db, ticker)
 
 
 async def get_options_reports_by_date(db: AsyncSession, date_str: str) -> list[OptionsWhaleReport]:

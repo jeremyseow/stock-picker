@@ -78,6 +78,11 @@ export default function SmartMoneyPage() {
     );
   };
 
+  // Backend stores naive UTC timestamps (no "Z"); mark them as UTC so they convert to local time.
+  const runDate = candidates.length > 0 ? new Date(candidates[0].date.endsWith("Z") ? candidates[0].date : `${candidates[0].date}Z`) : null;
+  const runAgeDays = runDate ? Math.floor((Date.now() - runDate.getTime()) / 86_400_000) : 0;
+  const isStale = runAgeDays >= 1;
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased selection:bg-indigo-500/30 selection:text-indigo-200">
       {/* Background Glow */}
@@ -98,6 +103,23 @@ export default function SmartMoneyPage() {
             <p className="text-slate-400 text-sm mt-2 max-w-2xl leading-relaxed">
               Top-down equity discovery targeting market-wide SEC Form 4 insider cluster buying (Code P) and Congressional STOCK Act disclosures.
             </p>
+            {runDate && (
+              <div
+                id="latest-run-date"
+                className={`inline-flex items-center gap-2 mt-4 px-4 py-1.5 rounded-full text-sm font-medium border ${
+                  isStale
+                    ? "bg-amber-500/10 text-amber-300 border-amber-500/20"
+                    : "bg-emerald-500/10 text-emerald-300 border-emerald-500/20"
+                }`}
+              >
+                <span className={`w-2 h-2 rounded-full ${isStale ? "bg-amber-400" : "bg-emerald-400 animate-pulse"}`} />
+                Picks from run on{" "}
+                <time dateTime={runDate.toISOString()} className="font-bold">
+                  {runDate.toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" })}
+                </time>
+                {isStale && <span className="text-amber-400/80">({runAgeDays} day{runAgeDays === 1 ? "" : "s"} ago)</span>}
+              </div>
+            )}
           </div>
 
           <div>

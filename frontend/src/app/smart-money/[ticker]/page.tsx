@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useEffect, useState, Suspense } from "react";
+import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import { API_BASE } from "@/lib/api";
@@ -58,9 +58,11 @@ interface SmartMoneyReportDetail {
   core_intel?: CoreIntelFacet;
 }
 
-export default function SmartMoneyDetailPage() {
+function SmartMoneyDetailContent() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const ticker = (params.ticker as string)?.toUpperCase();
+  const reportDate = searchParams.get("date");
   const [report, setReport] = useState<SmartMoneyReportDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -87,9 +89,12 @@ export default function SmartMoneyDetailPage() {
   useEffect(() => {
     if (!ticker) return;
     setLoading(true);
-    fetch(`${API_BASE}/api/smart-money/report/${ticker}`)
+    const queryUrl = reportDate
+      ? `${API_BASE}/api/smart-money/report/${ticker}?date=${reportDate}`
+      : `${API_BASE}/api/smart-money/report/${ticker}`;
+    fetch(queryUrl)
       .then((res) => {
-        if (!res.ok) throw new Error(`Failed to load Smart Money report for ${ticker}`);
+        if (!res.ok) throw new Error(`Failed to load Smart Money report for ${ticker}${reportDate ? ` on ${reportDate}` : ""}`);
         return res.json();
       })
       .then((data) => {
@@ -100,7 +105,7 @@ export default function SmartMoneyDetailPage() {
         setError(err.message);
         setLoading(false);
       });
-  }, [ticker]);
+  }, [ticker, reportDate]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased selection:bg-indigo-500/30 selection:text-indigo-200">
@@ -112,15 +117,21 @@ export default function SmartMoneyDetailPage() {
       <main className="max-w-5xl mx-auto px-6 py-12 relative">
         {/* Breadcrumb & Navigation */}
         <div className="flex flex-wrap items-center justify-between gap-4 mb-8 text-xs font-semibold">
-          <Link href="/smart-money" className="text-slate-400 hover:text-white transition-colors flex items-center gap-1.5">
-            <span>&larr;</span> Back to Smart Money Scout
-          </Link>
+          {reportDate ? (
+            <Link href="/stats" className="text-amber-400 hover:text-amber-300 transition-colors flex items-center gap-1.5 font-bold">
+              <span>&larr;</span> Historical Archive ({reportDate}) &bull; Back to Historical Reports
+            </Link>
+          ) : (
+            <Link href="/smart-money" className="text-slate-400 hover:text-white transition-colors flex items-center gap-1.5">
+              <span>&larr;</span> Back to Smart Money Scout
+            </Link>
+          )}
           <div className="flex items-center gap-3">
-            <Link href={`/retail/${ticker}`} className="text-amber-400 hover:text-amber-300 transition-colors">
+            <Link href={`/retail/${ticker}${reportDate ? `?date=${reportDate}` : ""}`} className="text-amber-400 hover:text-amber-300 transition-colors">
               View Retail Momentum Report &rarr;
             </Link>
             <span className="text-slate-700">|</span>
-            <Link href={`/report/${ticker}`} className="text-indigo-400 hover:text-indigo-300 transition-colors">
+            <Link href={`/report/${ticker}${reportDate ? `?date=${reportDate}` : ""}`} className="text-indigo-400 hover:text-indigo-300 transition-colors">
               View Unified Master Report &rarr;
             </Link>
             <span className="text-slate-700">|</span>
@@ -157,6 +168,11 @@ export default function SmartMoneyDetailPage() {
                     <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
                       ✓ SEC Ground Truth Verified
                     </span>
+                    {reportDate && (
+                      <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-amber-500/10 text-amber-300 border border-amber-500/30">
+                        📅 Historical Run: {reportDate}
+                      </span>
+                    )}
                   </div>
                   <p className="text-slate-400 text-sm font-medium">
                     {report.company_name} &bull; {report.sector} &bull; {report.industry}
@@ -437,6 +453,23 @@ export default function SmartMoneyDetailPage() {
         )}
       </main>
     </div>
+  );
+}
+
+export default function SmartMoneyDetailPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center gap-4">
+          <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+          <p className="text-slate-400 text-sm font-medium animate-pulse">
+            Loading Smart Money Intelligence...
+          </p>
+        </div>
+      }
+    >
+      <SmartMoneyDetailContent />
+    </Suspense>
   );
 }
 

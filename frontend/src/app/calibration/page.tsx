@@ -253,53 +253,53 @@ export default function CalibrationPage() {
               </div>
 
               {/* Archetype Interpretation Guide */}
-              <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800/80 text-xs text-slate-300 flex items-start gap-3 mt-4">
-                <span className="text-base shrink-0 mt-0.5">💡</span>
-                <div className="space-y-2 leading-relaxed w-full">
-                  <span className="font-bold text-slate-200 block text-xs uppercase tracking-wider">
+              <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800/80 text-xs text-slate-300 space-y-3 mt-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm shrink-0">💡</span>
+                  <span className="font-bold text-slate-200 text-xs uppercase tracking-wider">
                     Archetype Performance & Scoring Interpretation Guide
                   </span>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-slate-300 text-[11px]">
-                    <div className="p-2.5 rounded-lg bg-slate-900/50 border border-slate-800/60 space-y-1">
-                      <div className="font-bold text-purple-300 flex items-center gap-1.5">
-                        <span>🚀</span> The Rocket
-                      </div>
-                      <p className="text-slate-400 leading-snug">
-                        Full directional alignment where social momentum and institutional inflow surge together (+8% to +12% excess alpha).
-                      </p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-slate-300 text-[11px]">
+                  <div className="p-2.5 rounded-lg bg-slate-900/50 border border-slate-800/60 space-y-1">
+                    <div className="font-bold text-purple-300 flex items-center gap-1.5">
+                      <span>🚀</span> The Rocket
                     </div>
+                    <p className="text-slate-400 leading-snug">
+                      Full directional alignment where social momentum and institutional inflow surge together (+8% to +12% excess alpha).
+                    </p>
+                  </div>
 
-                    <div className="p-2.5 rounded-lg bg-slate-900/50 border border-slate-800/60 space-y-1">
-                      <div className="font-bold text-emerald-300 flex items-center gap-1.5">
-                        <span>🤫</span> Silent Accumulation
-                      </div>
-                      <p className="text-slate-400 leading-snug">
-                        Stealth institutional accumulation with dormant retail hype. Captures maximum asymmetric timing alpha before public crowd discovery.
-                      </p>
+                  <div className="p-2.5 rounded-lg bg-slate-900/50 border border-slate-800/60 space-y-1">
+                    <div className="font-bold text-emerald-300 flex items-center gap-1.5">
+                      <span>🤫</span> Silent Accumulation
                     </div>
+                    <p className="text-slate-400 leading-snug">
+                      Stealth institutional accumulation with dormant retail hype. Captures maximum asymmetric timing alpha before public crowd discovery.
+                    </p>
+                  </div>
 
-                    <div className="p-2.5 rounded-lg bg-slate-900/50 border border-slate-800/60 space-y-1">
-                      <div className="font-bold text-rose-400 flex items-center gap-1.5">
-                        <RetailTrapIcon className="w-3.5 h-3.5 shrink-0" />
-                        The Retail Trap
-                      </div>
-                      <p className="text-slate-400 leading-snug">
-                        Defensive capital preservation benchmark. Negative alpha (-5.1%) and 22% win rate confirm <strong className="text-emerald-400">100% protective accuracy</strong> against exit liquidity.
-                      </p>
+                  <div className="p-2.5 rounded-lg bg-slate-900/50 border border-slate-800/60 space-y-1">
+                    <div className="font-bold text-rose-400 flex items-center gap-1.5">
+                      <RetailTrapIcon className="w-3.5 h-3.5 shrink-0" />
+                      The Retail Trap
                     </div>
+                    <p className="text-slate-400 leading-snug">
+                      Defensive capital preservation benchmark. Negative alpha (-5.1%) and 22% win rate confirm <strong className="text-emerald-400">100% protective accuracy</strong> against exit liquidity.
+                    </p>
+                  </div>
 
-                    <div className="p-2.5 rounded-lg bg-slate-900/50 border border-slate-800/60 space-y-1">
-                      <div className="font-bold text-slate-300 flex items-center gap-1.5">
-                        <span>📢</span> Market Noise
-                      </div>
-                      <p className="text-slate-400 leading-snug">
-                        Neutral baseline. Sub-threshold institutional conviction and absence of retail consensus indicate non-directional chop or dead money consolidation.
-                      </p>
+                  <div className="p-2.5 rounded-lg bg-slate-900/50 border border-slate-800/60 space-y-1">
+                    <div className="font-bold text-slate-300 flex items-center gap-1.5">
+                      <span>📢</span> Market Noise
                     </div>
+                    <p className="text-slate-400 leading-snug">
+                      Neutral baseline. Sub-threshold institutional conviction and absence of retail consensus indicate non-directional chop or dead money consolidation.
+                    </p>
                   </div>
                 </div>
+                </div>
               </div>
-            </div>
 
             {/* Weights Calibration Table */}
             <div className="rounded-2xl bg-slate-900/40 border border-slate-800 p-6 space-y-4">
