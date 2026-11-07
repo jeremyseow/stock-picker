@@ -262,6 +262,44 @@ async def get_ticker_report(
                     entry["price"] = "Market"
             inflow_ledger.append(entry)
 
+    # Extract outflow/liquidation ledger from raw insider data if present
+    outflow_ledger = []
+    total_sell_volume = 0.0
+    top_seller_summary = None
+    if retail_rep and retail_rep.raw_insider_data:
+        raw_ins = retail_rep.raw_insider_data if isinstance(retail_rep.raw_insider_data, dict) else {}
+        txs = raw_ins.get("recent_transactions", [])
+        sellers = []
+        for t in txs:
+            if t.get("type") == "SELL":
+                val = t.get("value", 0) or 0
+                total_sell_volume += val
+                val_str = f"${val:,.0f}" if val else "-"
+                if val >= 1e6:
+                    val_str = f"${val/1e6:.1f}M"
+                elif val >= 1e3:
+                    val_str = f"${val/1e3:.0f}k"
+
+                name = t.get("insider") or "Executive"
+                pos = t.get("position") or "Officer"
+                seller_desc = f"{name} ({pos})"
+                if seller_desc not in sellers:
+                    sellers.append(seller_desc)
+
+                outflow_ledger.append({
+                    "date": t.get("date"),
+                    "seller": name,
+                    "role": pos,
+                    "shares": t.get("shares"),
+                    "price": t.get("price") or "-",
+                    "value": val_str,
+                    "details": t.get("details") or t.get("text") or "Open Market Sale",
+                })
+        if sellers:
+            top_seller_summary = ", ".join(sellers[:2])
+            if len(sellers) > 2:
+                top_seller_summary += f" +{len(sellers)-2} others"
+
     # Calculate potential upside
     potential_upside = None
     if current_price and target_price and current_price > 0:
@@ -307,14 +345,19 @@ async def get_ticker_report(
             "recommendation_rationale": retail_rep.recommendation_rationale if retail_rep else None,
         },
         "smart_money_overlay": {
-            "has_data": smart_money_rep is not None,
+            "has_data": smart_money_rep is not None or len(outflow_ledger) > 0,
+            "has_inflow": smart_money_rep is not None and len(inflow_ledger) > 0,
+            "has_outflow": len(outflow_ledger) > 0,
             "rank": smart_money_rep.rank if smart_money_rep else None,
             "conviction_score": smart_money_rep.conviction_score if smart_money_rep else 0.0,
-            "conviction_tier": smart_money_rep.conviction_tier if smart_money_rep else "No Cluster",
+            "conviction_tier": smart_money_rep.conviction_tier if smart_money_rep else ("Heavy Selling" if len(outflow_ledger) > 0 else "No Cluster"),
             "cluster_count": smart_money_rep.cluster_count if smart_money_rep else 0,
             "total_buy_volume": smart_money_rep.total_buy_volume if smart_money_rep else 0.0,
+            "total_sell_volume": total_sell_volume,
             "top_buyer_summary": smart_money_rep.top_buyer_summary if smart_money_rep else None,
+            "top_seller_summary": top_seller_summary,
             "inflow_ledger": inflow_ledger,
+            "outflow_ledger": outflow_ledger,
             "political_catalyst_analysis": smart_money_rep.political_catalyst_analysis if smart_money_rep else None,
             "corporate_catalyst_analysis": smart_money_rep.corporate_catalyst_analysis if smart_money_rep else None,
             "catalyst_horizon": smart_money_rep.catalyst_horizon if smart_money_rep else None,

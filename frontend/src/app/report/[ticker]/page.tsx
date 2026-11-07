@@ -43,6 +43,16 @@ interface InflowTransaction {
   delta_own?: string;
 }
 
+interface OutflowTransaction {
+  date?: string;
+  seller?: string;
+  role?: string;
+  shares?: number;
+  price?: string;
+  value?: string;
+  details?: string;
+}
+
 interface RetailOverlay {
   has_data: boolean;
   rank?: number | null;
@@ -55,13 +65,18 @@ interface RetailOverlay {
 
 interface SmartMoneyOverlay {
   has_data: boolean;
+  has_inflow?: boolean;
+  has_outflow?: boolean;
   rank?: number | null;
   conviction_score?: number;
   conviction_tier?: string;
   cluster_count?: number;
   total_buy_volume?: number;
+  total_sell_volume?: number;
   top_buyer_summary?: string | null;
+  top_seller_summary?: string | null;
   inflow_ledger?: InflowTransaction[];
+  outflow_ledger?: OutflowTransaction[];
   political_catalyst_analysis?: string | null;
   corporate_catalyst_analysis?: string | null;
   catalyst_horizon?: string | null;
@@ -117,6 +132,7 @@ function ReportPageContent({ params }: { params: Promise<{ ticker: string }> }) 
   const [optionsData, setOptionsData] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [flowTab, setFlowTab] = useState<"inflow" | "outflow">("inflow");
 
   useEffect(() => {
     setLoading(true);
@@ -156,6 +172,17 @@ function ReportPageContent({ params }: { params: Promise<{ ticker: string }> }) 
           }
         }
         setReport(parsedReport);
+
+        // Auto-select flow tab: if Retail Trap or has outflow without cluster buy, show outflow
+        if (
+          parsedReport.synthesis?.archetype === "The Retail Trap" ||
+          (parsedReport.smart_money_overlay?.has_outflow && !parsedReport.smart_money_overlay?.has_inflow)
+        ) {
+          setFlowTab("outflow");
+        } else {
+          setFlowTab("inflow");
+        }
+
         setLoading(false);
       })
       .catch((err) => {
@@ -558,25 +585,64 @@ function ReportPageContent({ params }: { params: Promise<{ ticker: string }> }) 
           </div>
         </div>
 
-        {/* SECTION 2: SMART MONEY & POLITICAL INFLOW OVERLAY */}
+        {/* SECTION 2: INSTITUTIONAL & INSIDER CAPITAL FLOW */}
         <div className="mb-10">
-          <div className="flex items-center justify-between gap-4 mb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold uppercase tracking-wider text-purple-400">Section 2</span>
-              <h2 className="text-xl font-black text-white tracking-tight">Smart Money & Political Inflow Overlay</h2>
+              <h2 className="text-xl font-black text-white tracking-tight">Institutional & Insider Capital Flow</h2>
             </div>
-            {smOverlay?.has_data ? (
-              <span className="text-xs font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-800/60 px-2.5 py-1 rounded-lg">
-                Active Inflow Candidate (${(smOverlay.total_buy_volume! / 1000).toFixed(0)}k Cluster)
-              </span>
-            ) : (
-              <span className="text-xs font-medium text-slate-500 bg-slate-900 px-2.5 py-1 rounded-lg border border-slate-800">
-                No Active Inflow Cluster
-              </span>
-            )}
+
+            {/* Inflow vs Outflow Tab Switcher */}
+            <div className="flex items-center gap-2">
+              {smOverlay?.has_inflow && (
+                <button
+                  onClick={() => setFlowTab("inflow")}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    flowTab === "inflow"
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm"
+                      : "bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800"
+                  }`}
+                >
+                  <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                  <span>Institutional Inflow (Buys)</span>
+                  {smOverlay.inflow_ledger && (
+                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-950 text-emerald-400 font-mono">
+                      {smOverlay.inflow_ledger.length}
+                    </span>
+                  )}
+                </button>
+              )}
+
+              {smOverlay?.has_outflow && (
+                <button
+                  onClick={() => setFlowTab("outflow")}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    flowTab === "outflow"
+                      ? "bg-rose-500/20 text-rose-300 border border-rose-500/40 shadow-sm"
+                      : "bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800"
+                  }`}
+                >
+                  <span className="w-2 h-2 rounded-full bg-rose-400" />
+                  <span>Executive Outflow (Sells)</span>
+                  {smOverlay.outflow_ledger && (
+                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-rose-950 text-rose-400 font-mono">
+                      {smOverlay.outflow_ledger.length}
+                    </span>
+                  )}
+                </button>
+              )}
+
+              {!smOverlay?.has_inflow && !smOverlay?.has_outflow && (
+                <span className="text-xs font-medium text-slate-500 bg-slate-900 px-2.5 py-1 rounded-lg border border-slate-800">
+                  No Active Cluster Disclosures
+                </span>
+              )}
+            </div>
           </div>
 
-          {smOverlay?.has_data && smOverlay.inflow_ledger && smOverlay.inflow_ledger.length > 0 ? (
+          {/* Tab 1: Inflow View */}
+          {flowTab === "inflow" && smOverlay?.has_inflow && smOverlay.inflow_ledger && smOverlay.inflow_ledger.length > 0 && (
             <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-6 backdrop-blur-sm space-y-6">
               {/* Ledger Summary Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
@@ -598,7 +664,7 @@ function ReportPageContent({ params }: { params: Promise<{ ticker: string }> }) 
                 )}
               </div>
 
-              {/* Actionable Thesis Callout - Full Width & Non-Italic */}
+              {/* Actionable Thesis Callout */}
               {smOverlay.actionable_thesis && (
                 <div className="p-4 rounded-xl bg-purple-950/20 border border-purple-800/40 space-y-1.5">
                   <span className="text-[10px] text-purple-400 uppercase font-black tracking-wider block">
@@ -642,10 +708,91 @@ function ReportPageContent({ params }: { params: Promise<{ ticker: string }> }) 
                 </table>
               </div>
             </div>
-          ) : (
+          )}
+
+          {/* Tab 2: Outflow View (The Smoking Gun for Retail Trap) */}
+          {flowTab === "outflow" && smOverlay?.has_outflow && smOverlay.outflow_ledger && smOverlay.outflow_ledger.length > 0 && (
+            <div className="bg-slate-900/40 border border-rose-900/40 rounded-2xl p-6 backdrop-blur-sm space-y-6">
+              {/* Outflow Alert Banner */}
+              <div className="p-4 rounded-xl bg-rose-950/30 border border-rose-800/40 flex items-start gap-3">
+                <span className="text-xl shrink-0 mt-0.5">⚠️</span>
+                <div className="space-y-1">
+                  <span className="text-xs font-bold text-rose-300 uppercase tracking-wider block">
+                    Executive Liquidation Warning (Bearish Divergence)
+                  </span>
+                  <p className="text-xs text-slate-300 leading-relaxed font-sans">
+                    Corporate directors and C-suite executives have executed heavy open-market liquidations. When paired with high retail social euphoria, this institutional distribution strongly indicates that retail dip-buyers are absorbing supply as <strong>exit liquidity</strong>.
+                  </p>
+                </div>
+              </div>
+
+              {/* Ledger Summary Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                <div className="bg-slate-950/60 border border-slate-800 p-3.5 rounded-xl">
+                  <span className="text-[10px] text-slate-500 uppercase font-black block mb-1">Selling Executives</span>
+                  <span className="text-xs font-semibold text-rose-200">
+                    {smOverlay.top_seller_summary || "Multiple corporate insiders"}
+                  </span>
+                </div>
+                <div className="bg-slate-950/60 border border-slate-800 p-3.5 rounded-xl">
+                  <span className="text-[10px] text-slate-500 uppercase font-black block mb-1">Total Disclosed Sales</span>
+                  <span className="text-xs font-bold text-rose-400 font-mono">
+                    {smOverlay.total_sell_volume && smOverlay.total_sell_volume > 0
+                      ? `$${(smOverlay.total_sell_volume / 1e6).toFixed(1)}M+ Liquidated`
+                      : `${smOverlay.outflow_ledger.length} Sell Filings`}
+                  </span>
+                </div>
+                <div className="bg-slate-950/60 border border-slate-800 p-3.5 rounded-xl">
+                  <span className="text-[10px] text-slate-500 uppercase font-black block mb-1">Signal Bias</span>
+                  <span className="text-xs font-bold text-amber-300">
+                    {synthesis?.archetype === "The Retail Trap" ? "Exit Liquidity Risk" : "Heavy Insider Distribution"}
+                  </span>
+                </div>
+              </div>
+
+              {/* Outflow Ledger Table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="text-[11px] uppercase tracking-wider text-slate-400 border-b border-slate-800 pb-2">
+                    <tr>
+                      <th className="py-2">Filing Date</th>
+                      <th className="py-2">Executive / Insider</th>
+                      <th className="py-2">Role / Title</th>
+                      <th className="py-2">Sale Price Range</th>
+                      <th className="py-2 text-right">Shares Sold</th>
+                      <th className="py-2 text-right">Value Liquidated</th>
+                      <th className="py-2 pl-4">Filing Details</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60">
+                    {smOverlay.outflow_ledger.map((item, idx) => (
+                      <tr key={idx} className="hover:bg-slate-950/40 transition-colors">
+                        <td className="py-2.5 text-slate-400 font-mono">{item.date || "N/A"}</td>
+                        <td className="py-2.5 font-bold text-white">{item.seller || "Insider"}</td>
+                        <td className="py-2.5 text-slate-300">{item.role || "Officer"}</td>
+                        <td className="py-2.5 font-bold text-amber-300 font-mono">{item.price || "N/A"}</td>
+                        <td className="py-2.5 text-right text-slate-300 font-mono font-bold">
+                          {item.shares ? item.shares.toLocaleString() : "-"}
+                        </td>
+                        <td className="py-2.5 text-right font-black text-rose-400 font-mono">
+                          {item.value || "-"}
+                        </td>
+                        <td className="py-2.5 pl-4 text-slate-400 text-[11px] font-sans">
+                          {item.details || "Sale"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Empty fallback if no data at all */}
+          {!smOverlay?.has_inflow && !smOverlay?.has_outflow && (
             <div className="p-6 rounded-2xl bg-slate-900/30 border border-slate-800/80 text-center">
               <p className="text-xs text-slate-400 italic">
-                No significant C-suite Form 4 cluster buys or Congressional STOCK Act trade disclosures recorded for ${report.ticker} in the current intelligence window.
+                No significant C-suite Form 4 cluster buys or executive liquidation disclosures recorded for ${report.ticker} in the current intelligence window.
               </p>
             </div>
           )}

@@ -7,7 +7,7 @@ An automated market intelligence system that discovers equity opportunities thro
 
 All discovery engines link into a decoupled, reusable **Core Equity Intelligence Engine (`CoreEquityIntel`)** that independently gathers fundamental metrics, SEC 10-Q/8-K disclosures, and DuckDuckGo corporate news, synthesizing objective ground truth and risk profiles with 6-hour caching. Engines 1, 2, and 3 attach specialized overlays (`RetailReport`, `SmartMoneyReport`, `OptionsWhaleReport`) over the core record, while the **Cross-Engine Synthesis Hub** correlates divergence across engines into a 3-way Triangulation Matrix to classify stocks into market archetypes (*The Rocket*, *Silent Accumulation / Stealth Whales*, *The Retail Trap*, and *Market Noise*).
 
-An empirical **Walk-Forward Model Calibration Engine** evaluates historical forward returns ($T+5, T+15, T+30$) against the S&P 500 (`SPY`) benchmark, presenting performance scorecards and mathematically tuning scoring weights across all engines via an interactive `/calibration` dashboard.
+An empirical **Walk-Forward Model Calibration Engine** evaluates live forward returns ($T+5, T+15, T+30$) against the S&P 500 (`SPY`) benchmark, presenting live cohort maturation scorecards and mathematically tuning scoring weights across all engines via an interactive `/calibration` dashboard.
 
 ---
 
@@ -75,7 +75,7 @@ stock-picker/
 ├── backend/
 │   ├── app/
 │   │   ├── agent.py                 # Pydantic AI agent for retail reports & trajectory meta-analyses
-│   │   ├── backtest_engine.py       # Walk-forward alpha computation (T+5, T+15, T+30 vs SPY) & weight optimizer
+│   │   ├── backtest_engine.py       # Walk-forward alpha computation (T+5, T+15, T+30 vs SPY) & live maturation tracker
 │   │   ├── core_intel_engine.py     # Decoupled Core Equity Intelligence researcher & 6-hr cache
 │   │   ├── crud.py                  # Async SQLAlchemy CRUD operations & multi-table date aggregation
 │   │   ├── database.py              # Engine & async SQLite session management (anchored to backend/stock_analyzer.db)
@@ -116,7 +116,7 @@ stock-picker/
 │   ├── src/
 │   │   ├── app/
 │   │   │   ├── page.tsx             # Homepage: Retail Momentum top stocks
-│   │   │   ├── calibration/page.tsx # Model Calibration & Backtest Scorecard (hit rate, alpha vs SPY, active vs tuned weights)
+│   │   │   ├── calibration/page.tsx # Live Walk-Forward Maturation Tracker (T+5/T+15/T+30 vs SPY, cohort stream, hyperparameter tuning)
 │   │   │   ├── retail/[ticker]/     # Retail Momentum Report: Engine 1 signals + Core Intel
 │   │   │   ├── smart-money/         # Smart Money & Gov: Market-wide radar & catalyst reports
 │   │   │   │   ├── page.tsx         # Inflow Feed & ranked candidates
@@ -124,7 +124,7 @@ stock-picker/
 │   │   │   ├── synthesis/page.tsx   # Cross-Engine Synthesis Matrix & Retail Awareness Gauge
 │   │   │   ├── stats/page.tsx       # Historical Reports explorer: 3 Dedicated Tabs (Retail, Smart Money, Synthesis)
 │   │   │   ├── analytics/page.tsx   # Multi-run Ticker Analytics, trajectory chart & Archetype Lifecycle
-│   │   │   └── report/[ticker]/     # Unified Master Report: Contrarian Playbook + Core Intel + Retail + Smart Money + Options Flow Card
+│   │   │   └── report/[ticker]/     # Unified Master Report: Contrarian Playbook + Core Intel + Institutional Capital Flow (Inflow & Outflow Ledgers) + Options Flow Card
 │   │   ├── components/
 │   │   │   ├── Navbar.tsx           # Persistent top navigation bar across all 6 sections
 │   │   │   ├── OptionsFlowCard.tsx  # Whale Options Radar card: Volume/OI ratio, OTM call sweeps, and put/call skew
