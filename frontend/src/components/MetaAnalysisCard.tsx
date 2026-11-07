@@ -89,7 +89,7 @@ export default function MetaAnalysisCard({ ticker, reportCount }: MetaAnalysisCa
         </div>
         <p className="text-xs text-slate-400 leading-relaxed max-w-2xl">
           Longitudinal meta-analysis synthesizes multi-run trends, sentiment divergence, and catalyst follow-through.
-          Because only <strong>1 pipeline run</strong> is recorded for ${ticker}, at least 1 more daily run is needed before an aggregated trajectory meta-analysis can be generated.
+          Because only <strong>{reportCount} pipeline run{reportCount === 1 ? "" : "s"}</strong> {reportCount === 1 ? "is" : "are"} recorded for ${ticker}, at least {Math.max(1, 2 - reportCount)} more daily run{Math.max(1, 2 - reportCount) === 1 ? "" : "s"} {Math.max(1, 2 - reportCount) === 1 ? "is" : "are"} needed before an aggregated trajectory meta-analysis can be generated.
         </p>
       </div>
     );

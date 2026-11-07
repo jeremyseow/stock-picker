@@ -222,104 +222,267 @@ async def get_retail_reports_by_date(db: AsyncSession, date_str: str) -> list[Re
 
 async def get_distinct_tracked_tickers(db: AsyncSession) -> list[str]:
     """
-    Fetch all distinct ticker symbols that have reports in the database across engines.
+    Fetch all distinct ticker symbols that have reports in the database across all engines and synthesis.
     """
-    q1 = select(distinct(RetailSentimentReport.ticker))
-    q2 = select(distinct(SmartMoneyReport.ticker))
-    res1 = (await db.execute(q1)).scalars().all()
-    res2 = (await db.execute(q2)).scalars().all()
-    all_tickers = set([r for r in res1 if r] + [r for r in res2 if r])
+    q_retail = select(distinct(RetailSentimentReport.ticker))
+    q_smart = select(distinct(SmartMoneyReport.ticker))
+    q_options = select(distinct(OptionsWhaleReport.ticker))
+    q_synthesis = select(distinct(SynthesisReport.ticker))
+    q_core = select(distinct(CoreEquityReport.ticker))
+
+    res_retail = (await db.execute(q_retail)).scalars().all()
+    res_smart = (await db.execute(q_smart)).scalars().all()
+    res_options = (await db.execute(q_options)).scalars().all()
+    res_synthesis = (await db.execute(q_synthesis)).scalars().all()
+    res_core = (await db.execute(q_core)).scalars().all()
+
+    all_tickers = set(
+        [r for r in res_retail if r]
+        + [r for r in res_smart if r]
+        + [r for r in res_options if r]
+        + [r for r in res_synthesis if r]
+        + [r for r in res_core if r]
+    )
     return sorted(list(all_tickers))
 
 
 async def get_ticker_history(db: AsyncSession, ticker: str):
     """
     Fetch all historical reports for a given ticker ordered by date ascending across all engines.
-    Supports Retail Momentum candidates, Smart Money Scout candidates, and Core Equity Intel records.
+    Unifies Retail Momentum, Smart Money Scout, Options Whale Radar, Synthesis, and Core Equity Intel records.
     """
     sym = ticker.upper()
-    # 1. Check RetailSentimentReports
-    query_retail = (
-        select(RetailSentimentReport)
-        .where(RetailSentimentReport.ticker == sym)
-        .order_by(RetailSentimentReport.date.asc())
-    )
-    res_retail = list((await db.execute(query_retail)).scalars().all())
-    if res_retail:
-        return res_retail
 
-    # 2. Check SmartMoneyReports with linked CoreEquityReport
-    query_smart = (
-        select(SmartMoneyReport)
-        .where(SmartMoneyReport.ticker == sym)
-        .order_by(SmartMoneyReport.date.asc())
-    )
-    res_smart = list((await db.execute(query_smart)).scalars().all())
-    if res_smart:
-        history_points = []
-        for sm in res_smart:
-            core_intel = None
-            if sm.core_intel_id:
-                core_intel = await get_core_equity_report_by_id(db, sm.core_intel_id)
-            if not core_intel:
-                core_intel = await get_latest_core_equity_report(db, sym)
-
-            curr_p = sm.current_price or (core_intel.current_price if core_intel else None)
-            targ_p = sm.target_price or (core_intel.target_price if core_intel else None)
-            raw_m = (core_intel.raw_metrics if core_intel else {}) or {}
-
-            is_alpha = "Alpha" in (sm.conviction_tier or "") or "High" in (sm.conviction_tier or "")
-            rec = "BUY" if is_alpha else "HOLD"
-
-            point = SimpleNamespace(
-                id=sm.id,
-                ticker=sm.ticker,
-                date=sm.date,
-                current_price=curr_p,
-                target_price=targ_p,
-                community_sentiment="Stealth (Unmonitored by Retail)",
-                community_hype=sm.top_buyer_summary or "Early institutional cluster accumulation detected.",
-                ground_truth_status=sm.ground_truth_status or (core_intel.ground_truth_status if core_intel else "Objective financial and SEC filing evaluation."),
-                reconciliation_risk_score=(core_intel.risk_score if core_intel else "Medium") or "Medium",
-                reconciliation_actionable_insight=sm.actionable_thesis or (core_intel.actionable_insight if core_intel else "Track insider buying and contract horizon."),
-                recommendation=rec,
-                recommendation_rationale=sm.actionable_thesis or "High-conviction smart money cluster buying.",
-                smart_money_verdict=sm.conviction_tier or "Tier-1 Alpha",
-                raw_metrics=raw_m,
-            )
-            history_points.append(point)
-        return history_points
-
-    # 3. Fallback to CoreEquityReport directly if neither overlay exists
     query_core = (
         select(CoreEquityReport)
         .where(CoreEquityReport.ticker == sym)
-        .order_by(CoreEquityReport.date.asc())
+        .order_by(CoreEquityReport.date.asc(), CoreEquityReport.id.asc())
     )
-    res_core = list((await db.execute(query_core)).scalars().all())
-    if res_core:
-        history_points = []
-        for c in res_core:
-            point = SimpleNamespace(
-                id=c.id,
-                ticker=c.ticker,
-                date=c.date,
-                current_price=c.current_price,
-                target_price=c.target_price,
-                community_sentiment="Fundamental Baseline",
-                community_hype="Identified via market evaluation.",
-                ground_truth_status=c.ground_truth_status or "Objective financial and SEC filing evaluation.",
-                reconciliation_risk_score=c.risk_score or "Medium",
-                reconciliation_actionable_insight=c.actionable_insight or "Monitor quarterly filings.",
-                recommendation="HOLD",
-                recommendation_rationale="Core equity research baseline.",
-                smart_money_verdict="Neutral",
-                raw_metrics=c.raw_metrics or {},
-            )
-            history_points.append(point)
-        return history_points
+    core_records = list((await db.execute(query_core)).scalars().all())
 
-    return []
+    query_retail = (
+        select(RetailSentimentReport)
+        .where(RetailSentimentReport.ticker == sym)
+        .order_by(RetailSentimentReport.date.asc(), RetailSentimentReport.id.asc())
+    )
+    retail_records = list((await db.execute(query_retail)).scalars().all())
+
+    query_smart = (
+        select(SmartMoneyReport)
+        .where(SmartMoneyReport.ticker == sym)
+        .order_by(SmartMoneyReport.date.asc(), SmartMoneyReport.id.asc())
+    )
+    smart_records = list((await db.execute(query_smart)).scalars().all())
+
+    query_synthesis = (
+        select(SynthesisReport)
+        .where(SynthesisReport.ticker == sym)
+        .order_by(SynthesisReport.date.asc(), SynthesisReport.id.asc())
+    )
+    synthesis_records = list((await db.execute(query_synthesis)).scalars().all())
+
+    query_options = (
+        select(OptionsWhaleReport)
+        .where(OptionsWhaleReport.ticker == sym)
+        .order_by(OptionsWhaleReport.date.asc(), OptionsWhaleReport.id.asc())
+    )
+    options_records = list((await db.execute(query_options)).scalars().all())
+
+    if not any([core_records, retail_records, smart_records, synthesis_records, options_records]):
+        return []
+
+    # Map buckets by key:
+    # Anchor by CoreEquityReport when available; match related engine records by core_intel_id or calendar date.
+    buckets_by_core_id: dict[int, dict] = {}
+    buckets_by_date: dict[str, dict] = {}
+    all_buckets: list[dict] = []
+
+    for c in core_records:
+        b = {
+            "core": c,
+            "retail": None,
+            "smart": None,
+            "synthesis": None,
+            "options": None,
+            "date": c.date,
+            "core_id": c.id,
+        }
+        buckets_by_core_id[c.id] = b
+        d_str = c.date.strftime("%Y-%m-%d") if c.date else None
+        if d_str:
+            buckets_by_date[d_str] = b
+        all_buckets.append(b)
+
+    def attach_or_create(item, comp_name: str):
+        c_id = getattr(item, "core_intel_id", None)
+        d_str = item.date.strftime("%Y-%m-%d") if getattr(item, "date", None) else None
+
+        # 1. Match by explicit core_intel_id
+        if c_id and c_id in buckets_by_core_id:
+            buckets_by_core_id[c_id][comp_name] = item
+            return
+
+        # 2. Match by calendar date with existing core bucket
+        if d_str and d_str in buckets_by_date:
+            buckets_by_date[d_str][comp_name] = item
+            return
+
+        # 3. Create a new standalone bucket
+        b = {
+            "core": None,
+            "retail": None,
+            "smart": None,
+            "synthesis": None,
+            "options": None,
+            "date": item.date,
+            "core_id": None,
+        }
+        b[comp_name] = item
+        if d_str:
+            buckets_by_date[d_str] = b
+        all_buckets.append(b)
+
+    for r in retail_records:
+        attach_or_create(r, "retail")
+
+    for s in smart_records:
+        attach_or_create(s, "smart")
+
+    for syn in synthesis_records:
+        attach_or_create(syn, "synthesis")
+
+    for opt in options_records:
+        attach_or_create(opt, "options")
+
+    history_points = []
+    for b in all_buckets:
+        core = b["core"]
+        retail = b["retail"]
+        smart = b["smart"]
+        synthesis = b["synthesis"]
+        options = b["options"]
+
+        curr_p = (
+            (core and core.current_price)
+            or (retail and retail.current_price)
+            or (smart and smart.current_price)
+        )
+        targ_p = (
+            (core and core.target_price)
+            or (retail and retail.target_price)
+            or (smart and smart.target_price)
+        )
+        raw_m = (
+            (core and core.raw_metrics)
+            or (retail and retail.raw_metrics)
+            or (smart and smart.raw_metrics)
+            or {}
+        )
+
+        rec = None
+        if retail and retail.recommendation:
+            rec = retail.recommendation
+        elif synthesis and synthesis.recommended_action:
+            action = synthesis.recommended_action.upper()
+            if any(w in action for w in ["BUY", "ROCKET", "ACCUMULATION"]):
+                rec = "BUY"
+            elif any(w in action for w in ["SELL", "AVOID", "SHORT", "TRAP"]):
+                rec = "SELL"
+            else:
+                rec = "HOLD"
+        elif smart:
+            is_alpha = "Alpha" in (smart.conviction_tier or "") or "High" in (smart.conviction_tier or "")
+            rec = "BUY" if is_alpha else "HOLD"
+        else:
+            rec = "HOLD"
+
+        rec_rationale = (
+            (retail and retail.recommendation_rationale)
+            or (synthesis and synthesis.synthesis_diagnosis)
+            or (smart and smart.actionable_thesis)
+            or "Core equity research baseline."
+        )
+
+        smart_verdict = (
+            (retail and retail.smart_money_verdict)
+            or (synthesis and synthesis.smart_money_flow)
+            or (smart and smart.conviction_tier)
+            or "Neutral"
+        )
+
+        comm_sentiment = (
+            (retail and retail.community_sentiment)
+            or (synthesis and synthesis.retail_sentiment)
+            or "Stealth (Unmonitored by Retail)"
+        )
+
+        comm_hype = (
+            (retail and retail.community_hype)
+            or (synthesis and f"Retail Phase: {synthesis.retail_awareness_level}")
+            or (smart and smart.top_buyer_summary)
+            or "No active Reddit discussion tracked."
+        )
+
+        gt_status = (
+            (core and core.ground_truth_status)
+            or (retail and retail.ground_truth_status)
+            or (smart and smart.ground_truth_status)
+            or "Objective financial and SEC filing evaluation."
+        )
+
+        risk_score = (
+            (core and core.risk_score)
+            or (retail and retail.reconciliation_risk_score)
+            or (smart and smart.risk_score)
+            or "Medium"
+        )
+
+        actionable_insight = (
+            (retail and retail.reconciliation_actionable_insight)
+            or (smart and smart.actionable_thesis)
+            or (synthesis and synthesis.synthesis_diagnosis)
+            or (core and core.actionable_insight)
+            or "Track quarterly filings and market signals."
+        )
+
+        point_id = (
+            (retail and retail.id)
+            or (smart and smart.id)
+            or (options and options.id)
+            or (core and core.id)
+            or (synthesis and synthesis.id)
+            or 0
+        )
+
+        run_date = (
+            (core and core.date)
+            or (retail and retail.date)
+            or (smart and smart.date)
+            or (synthesis and synthesis.date)
+            or (options and options.date)
+            or b.get("date")
+        )
+
+        point = SimpleNamespace(
+            id=point_id,
+            ticker=sym,
+            date=run_date,
+            current_price=curr_p,
+            target_price=targ_p,
+            community_sentiment=comm_sentiment,
+            community_hype=comm_hype,
+            ground_truth_status=gt_status,
+            reconciliation_risk_score=risk_score,
+            reconciliation_actionable_insight=actionable_insight,
+            recommendation=rec,
+            recommendation_rationale=rec_rationale,
+            smart_money_verdict=smart_verdict,
+            raw_metrics=raw_m,
+        )
+        history_points.append(point)
+
+    history_points.sort(key=lambda x: x.date if x.date else datetime.min.replace(tzinfo=timezone.utc))
+    return history_points
 
 
 async def get_latest_retail_report(db: AsyncSession, ticker: str) -> RetailSentimentReport | None:

@@ -5,7 +5,13 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
 from app.database import Base, get_db
-from app.models import RetailSentimentReport, CoreEquityReport
+from app.models import (
+    RetailSentimentReport,
+    CoreEquityReport,
+    SynthesisReport,
+    OptionsWhaleReport,
+    SmartMoneyReport,
+)
 from app.main import app
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
@@ -215,8 +221,142 @@ async def test_ticker_meta_analysis_endpoints(test_db):
         assert data["can_generate"] is True
         assert data["report_count"] == 2
 
-        # NVDA only has 1 report -> cannot generate
+        # NVDA only has 1 report in default test_db -> cannot generate
         res_nvda_post = await client.post("/api/analytics/ticker/NVDA/meta-analysis")
         assert res_nvda_post.status_code == 400
         assert "At least 2 historical reports" in res_nvda_post.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_cross_engine_ticker_history_progression(test_db):
+    """
+    Verify that when a ticker has multiple runs across different engines
+    (e.g. Day 1: Options Whale + Synthesis, Day 2: Retail + Synthesis, Day 3: Options Whale + Synthesis),
+    all 3 runs are unified in get_ticker_history and the ticker can generate meta-analysis.
+    """
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Seed multi-engine runs for MSFT
+        engine = create_async_engine(TEST_DATABASE_URL, echo=False)
+        async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+        
+        # We need to insert into the test_db's actual session/engine
+        # The override in test_db fixture uses the session from test_db.
+        # But we can query the app client directly if we use app.dependency_overrides.
+        pass
+
+    # Better approach: test with isolated session
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    async with async_session() as session:
+        # Day 1: Options Whale only (no Retail)
+        c1 = CoreEquityReport(
+            ticker="MSFT",
+            date=datetime(2026, 11, 4, 12, 0, 0, tzinfo=timezone.utc),
+            current_price=410.0,
+            target_price=500.0,
+            ground_truth_status="Cloud Azure growth",
+            risk_score="Low",
+            actionable_insight="Track Copilot ARR",
+            raw_metrics={"pe_ratio": 32.0}
+        )
+        session.add(c1)
+        await session.flush()
+
+        opt1 = OptionsWhaleReport(
+            ticker="MSFT",
+            date=datetime(2026, 11, 4, 12, 5, 0, tzinfo=timezone.utc),
+            core_intel_id=c1.id,
+            whale_score=85.0
+        )
+        syn1 = SynthesisReport(
+            ticker="MSFT",
+            date=datetime(2026, 11, 4, 12, 10, 0, tzinfo=timezone.utc),
+            core_intel_id=c1.id,
+            archetype="Silent Accumulation",
+            timing_edge_score=90.0,
+            recommended_action="EARLY SWING BUY",
+            retail_awareness_level="Zero Awareness (Stealth)"
+        )
+        session.add_all([opt1, syn1])
+
+        # Day 2: Retail Momentum
+        c2 = CoreEquityReport(
+            ticker="MSFT",
+            date=datetime(2026, 11, 6, 12, 0, 0, tzinfo=timezone.utc),
+            current_price=420.0,
+            target_price=500.0,
+            ground_truth_status="Copilot adoption expanding",
+            risk_score="Low",
+            actionable_insight="Monitor enterprise renewals",
+            raw_metrics={"pe_ratio": 33.0}
+        )
+        session.add(c2)
+        await session.flush()
+
+        ret2 = RetailSentimentReport(
+            ticker="MSFT",
+            date=datetime(2026, 11, 6, 12, 5, 0, tzinfo=timezone.utc),
+            core_intel_id=c2.id,
+            community_sentiment="Bullish",
+            community_hype="Copilot viral demos",
+            recommendation="BUY",
+            recommendation_rationale="Azure accelerating"
+        )
+        syn2 = SynthesisReport(
+            ticker="MSFT",
+            date=datetime(2026, 11, 6, 12, 10, 0, tzinfo=timezone.utc),
+            core_intel_id=c2.id,
+            archetype="The Rocket",
+            timing_edge_score=80.0,
+            recommended_action="STRONG BUY",
+            retail_awareness_level="Mainstream Momentum"
+        )
+        session.add_all([ret2, syn2])
+
+        # Day 3: Options Whale only (no Retail)
+        c3 = CoreEquityReport(
+            ticker="MSFT",
+            date=datetime(2026, 11, 7, 12, 0, 0, tzinfo=timezone.utc),
+            current_price=430.0,
+            target_price=500.0,
+            ground_truth_status="Datacenter capacity scale",
+            risk_score="Low",
+            actionable_insight="Track GPU lease commitments",
+            raw_metrics={"pe_ratio": 34.0}
+        )
+        session.add(c3)
+        await session.flush()
+
+        opt3 = OptionsWhaleReport(
+            ticker="MSFT",
+            date=datetime(2026, 11, 7, 12, 5, 0, tzinfo=timezone.utc),
+            core_intel_id=c3.id,
+            whale_score=92.0
+        )
+        syn3 = SynthesisReport(
+            ticker="MSFT",
+            date=datetime(2026, 11, 7, 12, 10, 0, tzinfo=timezone.utc),
+            core_intel_id=c3.id,
+            archetype="Silent Accumulation",
+            timing_edge_score=95.0,
+            recommended_action="EARLY SWING BUY",
+            retail_awareness_level="Zero Awareness (Stealth)"
+        )
+        session.add_all([opt3, syn3])
+        await session.commit()
+
+        from app.crud import get_ticker_history
+        history = await get_ticker_history(session, "MSFT")
+        assert len(history) == 3
+        assert history[0].current_price == 410.0
+        assert history[0].recommendation == "BUY"
+        assert history[1].current_price == 420.0
+        assert history[1].recommendation == "BUY"
+        assert history[2].current_price == 430.0
+        assert history[2].recommendation == "BUY"
 

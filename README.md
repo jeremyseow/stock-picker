@@ -15,15 +15,15 @@ An empirical **Walk-Forward Model Calibration Engine** evaluates live forward re
 
 ```mermaid
 graph TD
-    subgraph Data Sources & Ingestion
-        A[Reddit OAuth API] --> RAW_SOC[(retail_social_raw)]
-        B1[SEC Form 4 OpenInsider / yfinance] --> RAW_INS[(insider_trades_raw)]
-        B2[STOCK Act PTR Disclosures] --> RAW_CONG[(congress_trades_raw)]
-        C[Option Chains & Sweeps] --> RAW_OPT[(options_whale_raw)]
-        D[yfinance Metrics + SEC 10-Q/8-K] --> RAW_CORE[(core_equity_raw)]
+    subgraph SOURCES["Data Sources & Ingestion"]
+        A["Reddit OAuth API"] --> RAW_SOC[("retail_social_raw")]
+        B1["SEC Form 4 OpenInsider / yfinance"] --> RAW_INS[("insider_trades_raw")]
+        B2["STOCK Act PTR Disclosures"] --> RAW_CONG[("congress_trades_raw")]
+        C["Option Chains & Sweeps"] --> RAW_OPT[("options_whale_raw")]
+        D["yfinance Metrics + SEC 10-Q/8-K"] --> RAW_CORE[("core_equity_raw")]
     end
 
-    subgraph Layer 1: Raw Audit Tables
+    subgraph RAW_LAYER["Layer 1: Raw Audit Tables"]
         RAW_SOC
         RAW_INS
         RAW_CONG
@@ -31,22 +31,29 @@ graph TD
         RAW_CORE
     end
 
-    subgraph Layer 2: Synthesized Reports & Overlays
-        RAW_CORE -->|Ground Truth Synthesis| REP_CORE[(core_equity_reports)]
-        RAW_SOC & REP_CORE -->|Retail Hype Scoring| REP_RET[(retail_sentiment_reports)]
-        RAW_INS & RAW_CONG & REP_CORE -->|Inflow Cluster Scoring| REP_SM[(smart_money_reports)]
-        RAW_OPT & REP_CORE -->|Volume/OI & Call Sweeps| REP_OPT[(options_whale_reports)]
-        REP_RET & REP_SM & REP_OPT -->|3-Way Cross-Engine Correlator| REP_SYN[(synthesis_reports)]
+    subgraph REPORT_LAYER["Layer 2: Synthesized Reports & Overlays"]
+        RAW_CORE -->|Ground Truth Synthesis| REP_CORE[("core_equity_reports")]
+        RAW_SOC -->|Retail Hype Scoring| REP_RET[("retail_sentiment_reports")]
+        REP_CORE --> REP_RET
+        RAW_INS -->|Inflow Cluster Scoring| REP_SM[("smart_money_reports")]
+        RAW_CONG --> REP_SM
+        REP_CORE --> REP_SM
+        RAW_OPT -->|Volume/OI & Call Sweeps| REP_OPT[("options_whale_reports")]
+        REP_CORE --> REP_OPT
+        REP_RET -->|3-Way Cross-Engine Correlator| REP_SYN[("synthesis_reports")]
+        REP_SM --> REP_SYN
+        REP_OPT --> REP_SYN
     end
 
-    subgraph Model Calibration & Backtesting
-        REP_CORE & REP_SYN --> BACKTEST[Backtest & Calibration Engine<br/>backtest_engine.py]
-        BACKTEST -->|T+30 Excess Alpha vs SPY| CALIB_DB[(model_calibration_runs)]
-        BACKTEST -->|Tuned Weights| WEIGHTS_REG[Scoring Weights Registry<br/>scoring_weights.py]
+    subgraph CALIB["Model Calibration & Backtesting"]
+        REP_CORE --> BACKTEST["Backtest & Calibration Engine<br/>backtest_engine.py"]
+        REP_SYN --> BACKTEST
+        BACKTEST -->|T+30 Excess Alpha vs SPY| CALIB_DB[("model_calibration_runs")]
+        BACKTEST -->|Tuned Weights| WEIGHTS_REG["Scoring Weights Registry<br/>scoring_weights.py"]
     end
 
-    subgraph Backend API (FastAPI)
-        REP_CORE --> API[FastAPI Server<br/>main.py]
+    subgraph BACKEND["Backend API (FastAPI)"]
+        REP_CORE --> API["FastAPI Server<br/>main.py"]
         REP_RET --> API
         REP_SM --> API
         REP_OPT --> API
@@ -54,14 +61,14 @@ graph TD
         CALIB_DB --> API
     end
 
-    subgraph Frontend Dashboard (Next.js)
-        API --> DASH[Retail Momentum Feed<br/>/]
-        API --> SM[Smart Money Inflow Feed<br/>/smart-money]
-        API --> SYN_PAGE[Synthesis Matrix<br/>/synthesis]
-        API --> HIST[Historical Archives: 3 Tabs<br/>/stats]
-        API --> MASTER_REP[Unified Master Equity Report<br/>/report/:ticker]
-        API --> CALIB_PAGE[Model Calibration & Scorecard<br/>/calibration]
-        API --> ANALYTICS[Ticker Analytics & Archetype Lifecycle<br/>/analytics]
+    subgraph FRONTEND["Frontend Dashboard (Next.js)"]
+        API --> DASH["Retail Momentum Feed<br/>/"]
+        API --> SM["Smart Money Inflow Feed<br/>/smart-money"]
+        API --> SYN_PAGE["Synthesis Matrix<br/>/synthesis"]
+        API --> HIST["Historical Archives<br/>/stats"]
+        API --> MASTER_REP["Unified Master Equity Report<br/>/report/:ticker"]
+        API --> CALIB_PAGE["Model Calibration & Scorecard<br/>/calibration"]
+        API --> ANALYTICS["Ticker Analytics & Archetype Lifecycle<br/>/analytics"]
     end
 ```
 
@@ -170,9 +177,9 @@ stock-picker/
 8. **Dual-Layer Relational Architecture (`_raw` vs `_reports`)**:
    - *Choice*: Separates immutable raw evidence tables (`core_equity_raw`, `retail_social_raw`, `insider_trades_raw`, `congress_trades_raw`, `options_whale_raw`) from synthesized intelligence reports (`core_equity_reports`, `retail_sentiment_reports`, `smart_money_reports`, `options_whale_reports`, `synthesis_reports`).
    - *Trade-off*: Slightly more granular tables, but enables zero data loss, exact auditability of LLM inputs, reusability of raw insider/congress data across future models, and seamless backtesting with zero frontend schema breakage.
-9. **Strictly Normalized Overlays (Single Source of Truth)**:
-   - *Choice*: `core_equity_reports` is the canonical owner of corporate fundamentals, ground truth status, SEC disclosures, and risk profiles. Specialized report overlays (`retail_sentiment_reports`, `smart_money_reports`, `options_whale_reports`) reference `core_intel_id` without duplicating ground truth or raw metric columns.
-   - *Trade-off*: Requires relational joins/eager loading, but prevents data drift across reports and eliminates redundant JSON storage.
+9. **Strictly Normalized Overlays & Cross-Engine Trajectory Unification**:
+   - *Choice*: `core_equity_reports` is the canonical owner of corporate fundamentals, ground truth status, SEC disclosures, and risk profiles. Specialized report overlays (`retail_sentiment_reports`, `smart_money_reports`, `options_whale_reports`) reference `core_intel_id` without duplicating ground truth or raw metric columns. Multi-run trajectory analytics (`/api/analytics/ticker/{ticker}`) unify historical pipeline runs across all discovery engines and cross-engine synthesis states anchored by foundational core equity research records.
+   - *Trade-off*: Requires relational joins and multi-table unification buckets, but guarantees cross-engine historical consistency, prevents data drift across reports, and ensures longitudinal AI meta-analysis has access to all pipeline runs regardless of which engine discovered the ticker.
 
 ---
 
