@@ -39,11 +39,7 @@ from dotenv import load_dotenv
 load_dotenv(backend_dir / ".env")
 
 # 6. Import engine pipelines
-from app.pipeline import run_analysis_pipeline
-from app.smart_money_pipeline import run_smart_money_pipeline
-from app.options_pipeline import run_options_pipeline
-from app.synthesis_engine import generate_cross_engine_synthesis
-from app.database import AsyncSessionLocal
+from app.pipeline import run_full_pipeline
 
 
 async def main():
@@ -52,18 +48,7 @@ async def main():
     print("=" * 65 + "\n", flush=True)
 
     try:
-        logger.info("=== [Step 1/4: Engine 1 (Retail Momentum)] Starting... ===")
-        await run_analysis_pipeline()
-
-        logger.info("=== [Step 2/4: Engine 2 (Smart Money Scout)] Starting... ===")
-        await run_smart_money_pipeline(limit=5)
-
-        logger.info("=== [Step 3/4: Engine 3 (Whale Options Radar)] Starting... ===")
-        await run_options_pipeline(limit=5)
-
-        logger.info("=== [Step 4/4: Triangulation Synthesis Matrix] Correlating signals... ===")
-        async with AsyncSessionLocal() as db:
-            await generate_cross_engine_synthesis(db)
+        await run_full_pipeline(limit=5)
 
         print("\n" + "=" * 65, flush=True)
         print("✅ All 3 engines and Triangulation Synthesis completed successfully!", flush=True)

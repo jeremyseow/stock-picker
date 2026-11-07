@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
 from app.database import Base, get_db
-from app.models import TickerReport
+from app.models import RetailSentimentReport, CoreEquityReport
 from app.main import app
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
@@ -20,7 +20,7 @@ async def test_db():
         
     async with async_session() as session:
         # Seed test data
-        r1 = TickerReport(
+        r1 = RetailSentimentReport(
             ticker="AAPL",
             date=datetime(2026, 10, 28, 12, 0, 0, tzinfo=timezone.utc),
             current_price=220.0,
@@ -37,7 +37,7 @@ async def test_db():
             recommendation_rationale="Services growth offset hardware maturity",
             raw_metrics={"industry": "Consumer Electronics", "sector": "Technology", "pe_ratio": 30.5}
         )
-        r2 = TickerReport(
+        r2 = RetailSentimentReport(
             ticker="AAPL",
             date=datetime(2026, 10, 29, 12, 0, 0, tzinfo=timezone.utc),
             current_price=225.0,
@@ -54,7 +54,7 @@ async def test_db():
             recommendation_rationale="Services beat consensus",
             raw_metrics={"industry": "Consumer Electronics", "sector": "Technology", "pe_ratio": 31.0}
         )
-        r3 = TickerReport(
+        r3 = RetailSentimentReport(
             ticker="NVDA",
             date=datetime(2026, 10, 29, 12, 0, 0, tzinfo=timezone.utc),
             current_price=130.0,
@@ -71,7 +71,7 @@ async def test_db():
             recommendation_rationale="High valuation warrants holding",
             raw_metrics={"industry": "Semiconductors", "sector": "Technology", "pe_ratio": 55.0}
         )
-        r4 = TickerReport(
+        r4 = RetailSentimentReport(
             ticker="GOOG",
             date=datetime(2026, 10, 29, 12, 0, 0, tzinfo=timezone.utc),
             current_price=280.0,
@@ -88,6 +88,29 @@ async def test_db():
             recommendation_rationale="Search moats intact",
             raw_metrics={"industry": "Internet", "sector": "Technology", "pe_ratio": 24.0}
         )
+        c1 = CoreEquityReport(
+            ticker="AAPL", date=datetime(2026, 10, 28, 12, 0, 0, tzinfo=timezone.utc),
+            current_price=220.0, target_price=240.0, raw_metrics={"industry": "Consumer Electronics", "sector": "Technology", "pe_ratio": 30.5}
+        )
+        c2 = CoreEquityReport(
+            ticker="AAPL", date=datetime(2026, 10, 29, 12, 0, 0, tzinfo=timezone.utc),
+            current_price=225.0, target_price=245.0, raw_metrics={"industry": "Consumer Electronics", "sector": "Technology", "pe_ratio": 31.0}
+        )
+        c3 = CoreEquityReport(
+            ticker="NVDA", date=datetime(2026, 10, 29, 12, 0, 0, tzinfo=timezone.utc),
+            current_price=130.0, target_price=150.0, raw_metrics={"industry": "Semiconductors", "sector": "Technology", "pe_ratio": 55.0}
+        )
+        c4 = CoreEquityReport(
+            ticker="GOOG", date=datetime(2026, 10, 29, 12, 0, 0, tzinfo=timezone.utc),
+            current_price=280.0, target_price=350.0, raw_metrics={"industry": "Internet", "sector": "Technology", "pe_ratio": 24.0}
+        )
+        session.add_all([c1, c2, c3, c4])
+        await session.flush()
+
+        r1.core_intel_id = c1.id
+        r2.core_intel_id = c2.id
+        r3.core_intel_id = c3.id
+        r4.core_intel_id = c4.id
         session.add_all([r1, r2, r3, r4])
         await session.commit()
         
@@ -110,7 +133,7 @@ async def test_get_report_dates(test_db):
         assert dates == ["2026-10-29", "2026-10-28"]
 
 @pytest.mark.asyncio
-async def test_get_reports_by_date(test_db):
+async def test_get_retail_reports_by_date(test_db):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         # Specific date

@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from app.database import AsyncSessionLocal, init_db
-from app.crud import get_reports_by_date, get_distinct_report_dates
+from app.crud import get_retail_reports_by_date, get_distinct_report_dates
 from app.telegram_notifier import send_daily_digest
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -19,7 +19,7 @@ async def main():
             return
 
         latest_date = dates[0]
-        reports = await get_reports_by_date(db, latest_date)
+        reports = await get_retail_reports_by_date(db, latest_date)
         print(f"Found {len(reports)} reports from latest date ({latest_date}). Formatting digest...")
 
         summaries = []

@@ -25,14 +25,14 @@ async def init_db():
 
         # Self-healing column migrations for existing SQLite tables
         def migrate_columns(sync_conn):
-            rows = sync_conn.exec_driver_sql("PRAGMA table_info(synthesis_records)").fetchall()
-            existing_cols = {r[1] for r in rows}
-
-            if "whale_options_flow" not in existing_cols:
-                sync_conn.exec_driver_sql("ALTER TABLE synthesis_records ADD COLUMN whale_options_flow VARCHAR")
-            if "whale_options_score" not in existing_cols:
-                sync_conn.exec_driver_sql("ALTER TABLE synthesis_records ADD COLUMN whale_options_score FLOAT DEFAULT 0.0")
-            if "put_call_ratio" not in existing_cols:
-                sync_conn.exec_driver_sql("ALTER TABLE synthesis_records ADD COLUMN put_call_ratio FLOAT")
+            rows_rep = sync_conn.exec_driver_sql("PRAGMA table_info(synthesis_reports)").fetchall()
+            if rows_rep:
+                existing_rep_cols = {r[1] for r in rows_rep}
+                if "whale_options_flow" not in existing_rep_cols:
+                    sync_conn.exec_driver_sql("ALTER TABLE synthesis_reports ADD COLUMN whale_options_flow VARCHAR")
+                if "whale_options_score" not in existing_rep_cols:
+                    sync_conn.exec_driver_sql("ALTER TABLE synthesis_reports ADD COLUMN whale_options_score FLOAT DEFAULT 0.0")
+                if "put_call_ratio" not in existing_rep_cols:
+                    sync_conn.exec_driver_sql("ALTER TABLE synthesis_reports ADD COLUMN put_call_ratio FLOAT")
 
         await conn.run_sync(migrate_columns)

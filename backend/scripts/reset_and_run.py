@@ -11,7 +11,7 @@ if str(backend_dir) not in sys.path:
     sys.path.insert(0, str(backend_dir))
 
 from app.database import engine, Base, init_db, AsyncSessionLocal
-from app.pipeline import run_analysis_pipeline
+from app.retail_pipeline import run_retail_pipeline
 from app.smart_money_pipeline import run_smart_money_pipeline
 from app.synthesis_engine import generate_cross_engine_synthesis
 
@@ -45,7 +45,7 @@ async def main():
     if not args.skip_engine1:
         logger.info("=== [Engine 1: Retail Momentum] Starting... ===")
         try:
-            await run_analysis_pipeline()
+            await run_retail_pipeline()
             logger.info("=== [Engine 1: Retail Momentum] Completed successfully. ===")
         except Exception as e:
             logger.error(f"Engine 1 failed: {e}", exc_info=True)

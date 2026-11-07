@@ -5,7 +5,12 @@ from app.smart_money_ingestor import ingest_all_smart_money
 from app.smart_money_scorer import rank_smart_money_candidates
 from app.smart_money_researcher import research_smart_money_candidate
 from app.core_intel_engine import research_core_equity_intel
-from app.crud import save_smart_money_tickers, save_smart_money_report
+from app.crud import (
+    save_smart_money_tickers,
+    save_smart_money_report,
+    save_insider_trades_raw,
+    save_congress_trades_raw,
+)
 
 logger = logging.getLogger(__name__)
 _smart_money_lock = asyncio.Lock()
@@ -39,8 +44,12 @@ async def run_smart_money_pipeline(limit: int = 5) -> list[dict]:
             logger.warning("No qualifying smart money candidates found.")
             return []
 
-        # Step 3: Persistence of Tickers
+        # Step 3: Persistence of Raw Evidence & Tickers
         async with AsyncSessionLocal() as db:
+            if insiders:
+                await save_insider_trades_raw(db, insiders)
+            if congress:
+                await save_congress_trades_raw(db, congress)
             await save_smart_money_tickers(db, top_candidates)
 
         # Step 4: Research & Report Generation

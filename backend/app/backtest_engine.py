@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import desc
 
-from app.models import RetailReport, SmartMoneyReport, SynthesisRecord, ModelCalibrationRun
+from app.models import RetailSentimentReport, SmartMoneyReport, SynthesisReport, ModelCalibrationRun
 from app.scoring_weights import get_active_weights, update_active_weights
 from app.crud import save_model_calibration_run, get_latest_model_calibration_run
 
@@ -119,7 +119,7 @@ async def run_walk_forward_backtest(db: AsyncSession) -> Dict[str, Any]:
     logger.info("Starting Walk-Forward Historical Backtest Evaluation...")
 
     # 1. Fetch historical synthesis records
-    synth_query = select(SynthesisRecord).order_by(desc(SynthesisRecord.date)).limit(100)
+    synth_query = select(SynthesisReport).order_by(desc(SynthesisReport.date)).limit(100)
     synth_rows = list((await db.execute(synth_query)).scalars().all())
 
     active_weights = get_active_weights()

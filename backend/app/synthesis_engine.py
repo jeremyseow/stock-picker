@@ -5,10 +5,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.crud import (
     get_latest_smart_money_tickers,
     get_latest_options_whale_tickers,
-    get_latest_core_equity_intel,
-    save_synthesis_records,
+    get_latest_core_equity_report,
+    save_synthesis_reports,
 )
-from app.models import DailyTicker, TickerReport, OptionsWhaleTicker
+from app.models import DailyTicker, RetailSentimentReport, OptionsWhaleTicker
 from app.scoring_weights import get_synthesis_weights
 from sqlalchemy.future import select
 from sqlalchemy import func, desc
@@ -59,7 +59,7 @@ async def generate_cross_engine_synthesis(db: AsyncSession) -> List[Dict[str, An
     # Fetch latest Engine 1 reports for sentiment & verdicts
     e1_reports = {}
     for ticker in e1_tickers:
-        rep_q = select(TickerReport).where(TickerReport.ticker == ticker).order_by(desc(TickerReport.date)).limit(1)
+        rep_q = select(RetailSentimentReport).where(RetailSentimentReport.ticker == ticker).order_by(desc(RetailSentimentReport.date)).limit(1)
         rep = (await db.execute(rep_q)).scalar_one_or_none()
         if rep:
             e1_reports[ticker] = {
@@ -156,7 +156,7 @@ async def generate_cross_engine_synthesis(db: AsyncSession) -> List[Dict[str, An
             diagnosis = "Routine market chatter without significant insider or options whale convergence."
 
         timing_edge, awareness = calculate_timing_edge(mentions, max(conviction, whale_score), archetype)
-        core_intel = await get_latest_core_equity_intel(db, ticker)
+        core_intel = await get_latest_core_equity_report(db, ticker)
 
         whale_flow_label = None
         if e3_data:
@@ -190,6 +190,6 @@ async def generate_cross_engine_synthesis(db: AsyncSession) -> List[Dict[str, An
     synthesis_results = sorted(synthesis_results, key=lambda x: x["timing_edge_score"], reverse=True)
 
     # Persist to database
-    await save_synthesis_records(db, synthesis_results)
+    await save_synthesis_reports(db, synthesis_results)
     logger.info(f"Cross-Engine Synthesis completed: {len(synthesis_results)} records generated.")
     return synthesis_results

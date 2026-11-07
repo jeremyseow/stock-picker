@@ -61,26 +61,63 @@ def fetch_sec_filings(ticker_symbol: str, limit: int = 5) -> list:
 
 def fetch_recent_news(ticker_symbol: str, limit: int = 5) -> list:
     """
-    Fetches recent news headlines for a given ticker using yfinance.
+    Fetches recent news headlines for a given ticker using yfinance with DDGS news fallback.
     """
-    logger.info(f"Fetching recent news for {ticker_symbol}")
+    ticker_clean = TICKER_ALIASES.get(ticker_symbol.upper(), ticker_symbol.upper())
+    logger.info(f"Fetching recent news for {ticker_clean}")
+
+    # Attempt 1: yfinance stock.news
     try:
-        stock = yf.Ticker(ticker_symbol)
+        stock = yf.Ticker(ticker_clean)
         news_items = stock.news
-        
-        headlines = []
-        for item in news_items[:limit]:
-            headlines.append({
-                "title": item.get("title"),
-                "publisher": item.get("publisher"),
-                "link": item.get("link"),
-                "provider_publish_time": item.get("providerPublishTime")
-            })
-            
-        return headlines
+        if news_items:
+            headlines = []
+            for item in news_items[:limit]:
+                headlines.append({
+                    "title": item.get("title"),
+                    "publisher": item.get("publisher"),
+                    "link": item.get("link"),
+                    "provider_publish_time": item.get("providerPublishTime")
+                })
+            if headlines:
+                return headlines
     except Exception as e:
-        logger.error(f"Error fetching news for {ticker_symbol}: {e}")
-        return []
+        logger.warning(f"yfinance news unavailable for {ticker_clean} ({e}), falling back to DDGS news.")
+
+    # Attempt 2: DuckDuckGo dedicated news search
+    try:
+        with DDGS() as ddgs:
+            results = ddgs.news(f"{ticker_clean} stock", max_results=limit)
+            headlines = []
+            for r in results:
+                headlines.append({
+                    "title": r.get("title"),
+                    "publisher": r.get("source") or "Corporate Press",
+                    "link": r.get("url"),
+                    "provider_publish_time": None
+                })
+            if headlines:
+                return headlines
+    except Exception as e:
+        logger.warning(f"DDGS news search failed for {ticker_clean}: {e}")
+
+    # Attempt 3: General DDGS web search fallback
+    try:
+        web_results = fetch_web_search_news(ticker_clean, limit=limit)
+        if web_results:
+            return [
+                {
+                    "title": w.get("title"),
+                    "publisher": "Web Search",
+                    "link": w.get("link"),
+                    "provider_publish_time": None
+                }
+                for w in web_results
+            ]
+    except Exception:
+        pass
+
+    return []
 
 def fetch_web_search_news(ticker_symbol: str, limit: int = 3) -> list:
     """

@@ -10,7 +10,7 @@ from app.smart_money_scorer import (
 from app.synthesis_engine import generate_cross_engine_synthesis
 from app.models import (
     DailyTicker,
-    TickerReport,
+    RetailSentimentReport,
     SmartMoneyTicker,
 )
 
@@ -100,7 +100,7 @@ async def test_synthesis_archetype_classification():
 
     # Mock Engine 1 tickers (AAPL has retail hype, LMT has 0 retail hype)
     mock_e1_ticker = DailyTicker(ticker="AAPL", date=now, rank=1, mention_count=45, engagement_score=2500.0)
-    mock_e1_rep = TickerReport(
+    mock_e1_rep = RetailSentimentReport(
         ticker="AAPL",
         date=now,
         community_sentiment="85% Bullish",
@@ -120,7 +120,7 @@ async def test_synthesis_archetype_classification():
             mock_res.scalar_one_or_none.return_value = now
         elif "from daily_tickers" in q_str:
             mock_res.scalars().all.return_value = [mock_e1_ticker]
-        elif "from ticker_reports" in q_str:
+        elif "from ticker_reports" in q_str or "from retail_sentiment_reports" in q_str:
             mock_res.scalar_one_or_none.return_value = mock_e1_rep
         elif "max(smart_money_tickers.date)" in q_str:
             mock_res.scalar_one_or_none.return_value = now
@@ -153,31 +153,31 @@ async def test_synthesis_archetype_classification():
 
 
 @pytest.mark.asyncio
-async def test_get_latest_synthesis_records_deduplication():
-    from app.crud import get_latest_synthesis_records
-    from app.models import SynthesisRecord
+async def test_get_latest_synthesis_reports_deduplication():
+    from app.crud import get_latest_synthesis_reports
+    from app.models import SynthesisReport
     from datetime import datetime, timezone, timedelta
     
     now = datetime.now(timezone.utc)
     mock_db = AsyncMock()
     
     # Simulate multiple runs within window having duplicate tickers
-    rec1 = SynthesisRecord(id=1, ticker="AAPL", date=now, timing_edge_score=95.0, archetype="The Rocket")
-    rec2 = SynthesisRecord(id=2, ticker="AAPL", date=now - timedelta(seconds=2), timing_edge_score=90.0, archetype="The Rocket")
-    rec3 = SynthesisRecord(id=3, ticker="MSFT", date=now, timing_edge_score=80.0, archetype="Silent Accumulation")
+    rec1 = SynthesisReport(id=1, ticker="AAPL", date=now, timing_edge_score=95.0, archetype="The Rocket")
+    rec2 = SynthesisReport(id=2, ticker="AAPL", date=now - timedelta(seconds=2), timing_edge_score=90.0, archetype="The Rocket")
+    rec3 = SynthesisReport(id=3, ticker="MSFT", date=now, timing_edge_score=80.0, archetype="Silent Accumulation")
     
     async def mock_exec(query):
         mock_res = MagicMock()
         q_str = str(query).lower()
-        if "max(synthesis_records.date)" in q_str:
+        if "max(" in q_str and (".date)" in q_str or "_reports.date" in q_str or "_records.date" in q_str):
             mock_res.scalar_one_or_none.return_value = now
-        elif "from synthesis_records" in q_str:
+        elif "from synthesis_records" in q_str or "from synthesis_reports" in q_str:
             mock_res.scalars().all.return_value = [rec1, rec2, rec3]
         return mock_res
 
     mock_db.execute.side_effect = mock_exec
 
-    results = await get_latest_synthesis_records(mock_db)
+    results = await get_latest_synthesis_reports(mock_db)
     assert len(results) == 2
     tickers = [r.ticker for r in results]
     assert "AAPL" in tickers

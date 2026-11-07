@@ -12,7 +12,7 @@ from app.market_researcher import (
     fetch_sec_filings,
     fetch_web_search_news,
 )
-from app.crud import get_latest_core_equity_intel, save_core_equity_intel
+from app.crud import get_latest_core_equity_report, save_core_equity_report
 
 logger = logging.getLogger(__name__)
 
@@ -53,14 +53,14 @@ async def research_core_equity_intel(
 ) -> dict:
     """
     Gathers fundamental metrics, SEC filings, and news, synthesizing a standardized
-    CoreEquityIntel record. If already generated in the database within 6 hours, reuses the cached record.
+    CoreEquityReport record. If already generated in the database within 6 hours, reuses the cached record.
     """
     ticker_clean = ticker.upper()
     logger.info(f"Conducting Core Equity Intel research for ${ticker_clean}...")
 
     # Step 1: Check existing record if db session is provided (deduplication)
     if db and not force_refresh:
-        existing = await get_latest_core_equity_intel(db, ticker_clean)
+        existing = await get_latest_core_equity_report(db, ticker_clean)
         if existing and existing.date:
             now_utc = datetime.now(timezone.utc)
             # Make sure timezone aware
@@ -169,7 +169,7 @@ Conduct Core Fundamental Equity Intelligence Research on stock ticker: {ticker_c
 
     # Persist if db is provided
     if db:
-        saved_record = await save_core_equity_intel(db, intel_payload)
+        saved_record = await save_core_equity_report(db, intel_payload)
         intel_payload["id"] = saved_record.id
         intel_payload["date"] = saved_record.date.isoformat() if saved_record.date else datetime.now(timezone.utc).isoformat()
 

@@ -1,4 +1,5 @@
 import sys
+import os
 import sqlite3
 from datetime import datetime
 
@@ -11,21 +12,22 @@ def format_price(val):
         return str(val)
 
 def query_report(ticker):
-    conn = sqlite3.connect("stock_analyzer.db")
+    db_path = os.path.join(os.path.dirname(__file__), "stock_analyzer.db")
+    conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
     # Query latest retail report and joined core equity intel
     cursor.execute("""
-        SELECT r.ticker, r.date, r.current_price, r.target_price,
+        SELECT r.ticker, r.date, c.current_price, c.target_price,
                r.community_sentiment, r.community_hype,
-               COALESCE(c.ground_truth_status, r.ground_truth_status, 'Verified') as ground_truth_status,
-               COALESCE(c.ground_truth_filings_news, r.ground_truth_filings_news, 'Disclosures verified.') as ground_truth_filings_news,
-               COALESCE(c.events_happenings, r.events_happenings, 'None reported') as events_happenings,
-               COALESCE(c.risk_score, r.reconciliation_risk_score, 'Medium') as risk_score,
-               COALESCE(c.risk_analysis, r.reconciliation_analysis, 'Fundamental risk evaluated.') as risk_analysis,
+               COALESCE(c.ground_truth_status, 'Verified') as ground_truth_status,
+               COALESCE(c.ground_truth_filings_news, 'Disclosures verified.') as ground_truth_filings_news,
+               COALESCE(c.events_happenings, 'None reported') as events_happenings,
+               COALESCE(c.risk_score, 'Medium') as risk_score,
+               COALESCE(c.risk_analysis, 'Fundamental risk evaluated.') as risk_analysis,
                COALESCE(r.reconciliation_actionable_insight, c.actionable_insight, 'Monitor developments') as actionable_insight
-        FROM retail_reports r
-        LEFT JOIN core_equity_intels c ON r.core_intel_id = c.id
+        FROM retail_sentiment_reports r
+        LEFT JOIN core_equity_reports c ON r.core_intel_id = c.id
         WHERE UPPER(r.ticker) = ?
         ORDER BY r.date DESC
         LIMIT 1;

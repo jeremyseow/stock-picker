@@ -6,7 +6,7 @@ from app.main import app
 from app.database import get_db, Base
 from app.options_scorer import score_options_flow, rank_whale_candidates
 from app.scoring_weights import get_active_weights, update_active_weights, reset_weights_to_default
-from app.models import CoreEquityIntel, OptionsWhaleTicker, OptionsWhaleReport, SynthesisRecord
+from app.models import CoreEquityReport, OptionsWhaleTicker, OptionsWhaleReport, SynthesisReport
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
@@ -94,7 +94,7 @@ def test_scoring_weights_registry_persistence():
 async def test_options_api_endpoints(client: AsyncClient, test_db: AsyncSession):
     """Verify canonical options endpoints return structured options flow data."""
     now = datetime.now(timezone.utc)
-    core = CoreEquityIntel(
+    core = CoreEquityReport(
         ticker="PLTR",
         company_name="Palantir Technologies",
         sector="Technology",

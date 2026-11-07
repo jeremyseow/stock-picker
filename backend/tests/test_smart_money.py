@@ -7,7 +7,7 @@ from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
 from app.database import Base, get_db
-from app.models import TickerReport
+from app.models import RetailSentimentReport, CoreEquityReport
 from app.main import app
 from app.llm_schemas import StockReport
 from app.market_researcher import fetch_insider_data, fetch_congressional_trades
@@ -141,16 +141,28 @@ async def smart_money_test_db():
         await conn.run_sync(Base.metadata.create_all)
 
     async with async_session() as session:
-        rep = TickerReport(
+        core = CoreEquityReport(
             ticker="TSLA",
             date=datetime(2026, 10, 30, 12, 0, 0, tzinfo=timezone.utc),
             current_price=250.0,
             target_price=220.0,
-            community_sentiment="90% Bullish",
-            community_hype="Extreme retail euphoria",
             ground_truth_status="Automotive margins declining",
             ground_truth_filings_news="10-Q shows shrinking automotive gross margins",
             events_happenings="Robotaxi reveal event",
+            risk_score="High",
+            risk_analysis="Heavy insider liquidation into retail meme pump.",
+            actionable_insight="Trim or hedge long positions.",
+            raw_metrics={"industry": "Automotive", "sector": "Consumer Cyclical"}
+        )
+        session.add(core)
+        await session.flush()
+
+        rep = RetailSentimentReport(
+            ticker="TSLA",
+            date=datetime(2026, 10, 30, 12, 0, 0, tzinfo=timezone.utc),
+            core_intel_id=core.id,
+            community_sentiment="90% Bullish",
+            community_hype="Extreme retail euphoria",
             smart_money_verdict="Bearish Divergence",
             raw_insider_data={
                 "has_data": True,
@@ -179,12 +191,9 @@ async def smart_money_test_db():
                     }
                 ]
             },
-            reconciliation_risk_score="High",
-            reconciliation_analysis="Heavy insider liquidation into retail meme pump.",
             reconciliation_actionable_insight="Trim or hedge long positions.",
             recommendation="SELL",
             recommendation_rationale="C-suite dumping shares despite retail optimism.",
-            raw_metrics={"industry": "Automotive", "sector": "Consumer Cyclical"}
         )
         session.add(rep)
         await session.commit()

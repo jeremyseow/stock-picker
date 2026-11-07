@@ -7,16 +7,16 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 
 from app.database import Base, get_db
 from app.models import (
-    CoreEquityIntel,
+    CoreEquityReport,
     DailyTicker,
-    RetailReport,
+    RetailSentimentReport,
     SmartMoneyTicker,
     SmartMoneyReport,
-    SynthesisRecord,
+    SynthesisReport,
 )
 from app.core_intel_engine import research_core_equity_intel
 from app.llm_schemas import CoreIntelSynthesis
-from app.crud import get_latest_synthesis_records
+from app.crud import get_latest_synthesis_reports
 from app.main import app
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
@@ -55,7 +55,7 @@ async def app_client():
     # Seed test data across all tables
     async with async_session() as session:
         # Core Intel
-        c1 = CoreEquityIntel(
+        c1 = CoreEquityReport(
             ticker="PLTR",
             date=now,
             company_name="Palantir Technologies Inc.",
@@ -79,7 +79,7 @@ async def app_client():
         session.add(dt1)
         await session.flush()
 
-        rr1 = RetailReport(
+        rr1 = RetailSentimentReport(
             ticker="PLTR",
             date=now,
             rank=1,
@@ -92,7 +92,7 @@ async def app_client():
             recommendation_rationale="Commercial momentum outpaces valuation headwind"
         )
         # Yesterday retail report (for date filter testing)
-        rr0 = RetailReport(
+        rr0 = RetailSentimentReport(
             ticker="PLTR",
             date=yesterday,
             rank=2,
@@ -153,7 +153,7 @@ async def app_client():
         session.add_all([smr1, smr0])
 
         # Smart-Money only ticker without retail report (e.g. ACN)
-        c_acn = CoreEquityIntel(
+        c_acn = CoreEquityReport(
             ticker="ACN",
             date=now,
             company_name="Accenture plc",
@@ -183,7 +183,7 @@ async def app_client():
         session.add(smr_acn)
 
         # Synthesis Record for now
-        sr1 = SynthesisRecord(
+        sr1 = SynthesisReport(
             ticker="PLTR",
             date=now,
             core_intel_id=c1.id,
@@ -197,7 +197,7 @@ async def app_client():
             recommended_action="AGGRESSIVE BUY"
         )
         # Duplicate record from second run on same date (to verify deduplication)
-        sr1_dup = SynthesisRecord(
+        sr1_dup = SynthesisReport(
             ticker="PLTR",
             date=now + timedelta(minutes=5),
             core_intel_id=c1.id,
@@ -211,7 +211,7 @@ async def app_client():
             recommended_action="AGGRESSIVE BUY"
         )
         # Yesterday synthesis record (for archetype progression)
-        sr0 = SynthesisRecord(
+        sr0 = SynthesisReport(
             ticker="PLTR",
             date=yesterday,
             core_intel_id=None,
@@ -283,10 +283,10 @@ async def test_core_intel_caching(test_session: AsyncSession):
 
 @pytest.mark.asyncio
 async def test_synthesis_deduplication(test_session: AsyncSession):
-    """Verify get_latest_synthesis_records returns exactly 1 deduplicated record per ticker."""
+    """Verify get_latest_synthesis_reports returns exactly 1 deduplicated record per ticker."""
     now = datetime(2026, 11, 1, 12, 0, 0, tzinfo=timezone.utc)
     records = [
-        SynthesisRecord(
+        SynthesisReport(
             ticker="AAPL",
             date=now,
             archetype="Market Noise",
@@ -298,7 +298,7 @@ async def test_synthesis_deduplication(test_session: AsyncSession):
             synthesis_diagnosis="Run 1",
             recommended_action="PASS"
         ),
-        SynthesisRecord(
+        SynthesisReport(
             ticker="AAPL",
             date=now + timedelta(seconds=2),
             archetype="Market Noise",
@@ -310,7 +310,7 @@ async def test_synthesis_deduplication(test_session: AsyncSession):
             synthesis_diagnosis="Run 2",
             recommended_action="PASS"
         ),
-        SynthesisRecord(
+        SynthesisReport(
             ticker="NVDA",
             date=now + timedelta(seconds=2),
             archetype="The Rocket",
@@ -326,7 +326,7 @@ async def test_synthesis_deduplication(test_session: AsyncSession):
     test_session.add_all(records)
     await test_session.commit()
 
-    deduped = await get_latest_synthesis_records(test_session)
+    deduped = await get_latest_synthesis_reports(test_session)
     tickers = [r.ticker for r in deduped]
     assert len(tickers) == len(set(tickers))
     assert "AAPL" in tickers

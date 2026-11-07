@@ -5,7 +5,7 @@ An automated market intelligence system that discovers equity opportunities thro
 2. **Engine 2 (Smart Money & Political Scout)**: Aggregates SEC Form 4 insider cluster purchases and Capitol Hill STOCK Act disclosures.
 3. **Engine 3 (Institutional Whale Options Radar)**: Scrapes equity option chains to detect unusual Volume > $2.5\times$ Open Interest spikes, aggressive out-of-the-money call sweeps, and put/call volume skews.
 
-All discovery engines link into a decoupled, reusable **Core Equity Intelligence Engine (`CoreEquityIntel`)** that independently gathers fundamental metrics, SEC 10-Q/8-K disclosures, and DuckDuckGo corporate news, synthesizing objective ground truth and risk profiles with 6-hour caching. Engines 1, 2, and 3 attach specialized overlays (`RetailReport`, `SmartMoneyReport`, `OptionsWhaleReport`) over the core record, while the **Cross-Engine Synthesis Hub** correlates divergence across engines into a 3-way Triangulation Matrix to classify stocks into market archetypes (*The Rocket*, *Silent Accumulation / Stealth Whales*, *The Retail Trap*, and *Market Noise*).
+All discovery engines link into a decoupled, reusable **Core Equity Intelligence Engine (`CoreEquityReport`)** that independently gathers fundamental metrics, SEC 10-Q/8-K disclosures, and DuckDuckGo corporate news, synthesizing objective ground truth and risk profiles with 6-hour caching. Engines 1, 2, and 3 attach specialized overlays (`RetailSentimentReport`, `SmartMoneyReport`, `OptionsWhaleReport`) over the core record, while the **Cross-Engine Synthesis Hub** correlates divergence across engines into a 3-way Triangulation Matrix (`SynthesisReport`) to classify stocks into market archetypes (*The Rocket*, *Silent Accumulation / Stealth Whales*, *The Retail Trap*, and *Market Noise*).
 
 An empirical **Walk-Forward Model Calibration Engine** evaluates live forward returns ($T+5, T+15, T+30$) against the S&P 500 (`SPY`) benchmark, presenting live cohort maturation scorecards and mathematically tuning scoring weights across all engines via an interactive `/calibration` dashboard.
 
@@ -15,43 +15,42 @@ An empirical **Walk-Forward Model Calibration Engine** evaluates live forward re
 
 ```mermaid
 graph TD
-    subgraph Discovery Engines
-        A[Reddit OAuth API<br/>WSB, stocks, ValueInvesting] --> E1[Engine 1: Retail Momentum Scout<br/>reddit_scraper.py + ticker_extractor.py]
-        B[SEC Form 4 Code P & STOCK Act PTRs<br/>OpenInsider & Congressional Disclosures] --> E2[Engine 2: Smart Money Scout<br/>smart_money_ingestor.py + scorer.py]
-        C[Option Chains & Sweeps<br/>Volume > 2.5x OI & OTM Calls] --> E3[Engine 3: Whale Options Radar<br/>options_scraper.py + scorer.py]
+    subgraph Data Sources & Ingestion
+        A[Reddit OAuth API] --> RAW_SOC[(retail_social_raw)]
+        B1[SEC Form 4 OpenInsider / yfinance] --> RAW_INS[(insider_trades_raw)]
+        B2[STOCK Act PTR Disclosures] --> RAW_CONG[(congress_trades_raw)]
+        C[Option Chains & Sweeps] --> RAW_OPT[(options_whale_raw)]
+        D[yfinance Metrics + SEC 10-Q/8-K] --> RAW_CORE[(core_equity_raw)]
     end
 
-    subgraph Reusable Foundational Intelligence
-        E1 -->|Top Retail Tickers| CORE[Core Equity Intel Engine<br/>core_intel_engine.py]
-        E2 -->|Top Smart Money Tickers| CORE
-        E3 -->|Top Whale Options Tickers| CORE
-        CORE -->|yfinance Ratios + SEC 10-Q/8-K + News| GEMINI[Gemini 4 Argon Core Synthesis<br/>Objective Ground Truth + Risk Analysis]
-        GEMINI -->|6-Hour Cached Ground Truth| INTEL_DB[(core_equity_intels)]
+    subgraph Layer 1: Raw Audit Tables
+        RAW_SOC
+        RAW_INS
+        RAW_CONG
+        RAW_OPT
+        RAW_CORE
     end
 
-    subgraph Specialized Modular Overlays
-        INTEL_DB -->|Attach core_intel_id| RETAIL_OV[Retail Momentum Overlay<br/>retail_reports]
-        INTEL_DB -->|Attach core_intel_id| SMART_OV[Smart Money Overlay<br/>smart_money_reports]
-        INTEL_DB -->|Attach core_intel_id| WHALE_OV[Whale Options Overlay<br/>options_whale_reports]
-        RETAIL_OV --> SYN[3-Way Synthesis Hub<br/>synthesis_engine.py]
-        SMART_OV --> SYN
-        WHALE_OV --> SYN
-        SYN -->|Archetype Classification & Edge Score| SYN_DB[(synthesis_records)]
+    subgraph Layer 2: Synthesized Reports & Overlays
+        RAW_CORE -->|Ground Truth Synthesis| REP_CORE[(core_equity_reports)]
+        RAW_SOC & REP_CORE -->|Retail Hype Scoring| REP_RET[(retail_sentiment_reports)]
+        RAW_INS & RAW_CONG & REP_CORE -->|Inflow Cluster Scoring| REP_SM[(smart_money_reports)]
+        RAW_OPT & REP_CORE -->|Volume/OI & Call Sweeps| REP_OPT[(options_whale_reports)]
+        REP_RET & REP_SM & REP_OPT -->|3-Way Cross-Engine Correlator| REP_SYN[(synthesis_reports)]
     end
 
     subgraph Model Calibration & Backtesting
-        INTEL_DB --> BACKTEST[Backtest & Calibration Engine<br/>backtest_engine.py]
-        SYN_DB --> BACKTEST
+        REP_CORE & REP_SYN --> BACKTEST[Backtest & Calibration Engine<br/>backtest_engine.py]
         BACKTEST -->|T+30 Excess Alpha vs SPY| CALIB_DB[(model_calibration_runs)]
         BACKTEST -->|Tuned Weights| WEIGHTS_REG[Scoring Weights Registry<br/>scoring_weights.py]
     end
 
     subgraph Backend API (FastAPI)
-        INTEL_DB --> API[FastAPI Server<br/>main.py]
-        RETAIL_OV --> API
-        SMART_OV --> API
-        WHALE_OV --> API
-        SYN_DB --> API
+        REP_CORE --> API[FastAPI Server<br/>main.py]
+        REP_RET --> API
+        REP_SM --> API
+        REP_OPT --> API
+        REP_SYN --> API
         CALIB_DB --> API
     end
 
@@ -60,7 +59,7 @@ graph TD
         API --> SM[Smart Money Inflow Feed<br/>/smart-money]
         API --> SYN_PAGE[Synthesis Matrix<br/>/synthesis]
         API --> HIST[Historical Archives: 3 Tabs<br/>/stats]
-        API --> MASTER_REP[Unified Master Equity Report (includes Whale Options)<br/>/report/:ticker]
+        API --> MASTER_REP[Unified Master Equity Report<br/>/report/:ticker]
         API --> CALIB_PAGE[Model Calibration & Scorecard<br/>/calibration]
         API --> ANALYTICS[Ticker Analytics & Archetype Lifecycle<br/>/analytics]
     end
@@ -82,11 +81,12 @@ stock-picker/
 │   │   ├── llm_schemas.py           # Pydantic schemas (CoreIntelSynthesis, RetailOverlay, SmartMoneyReport)
 │   │   ├── main.py                  # FastAPI endpoints & Unified Master Report aggregator
 │   │   ├── market_researcher.py     # yfinance & DuckDuckGo metrics, news fetcher, and ticker validator
-│   │   ├── models.py                # SQLAlchemy models (CoreEquityIntel, RetailReport, SmartMoneyReport, OptionsWhaleReport, SynthesisRecord)
+│   │   ├── models.py                # Dual-layer SQLAlchemy models: Layer 1 Raw (*_raw) & Layer 2 Reports (*_reports)
 │   │   ├── options_pipeline.py      # Engine 3 orchestrator for Institutional Whale Options Radar
 │   │   ├── options_scraper.py       # yfinance option chain scanner for unusual Volume > 2.5x OI & sweeps
 │   │   ├── options_scorer.py        # Whale Conviction Scorer (0-100) & put/call volume skew calculator
-│   │   ├── pipeline.py              # Engine 1 ingestion & Retail Overlay attachment
+│   │   ├── retail_pipeline.py       # Engine 1 orchestrator for Retail Momentum Scout
+│   │   ├── pipeline.py              # Full multi-engine pipeline orchestrator (Engine 1 + 2 + 3 + Synthesis)
 │   │   ├── reddit_scraper.py        # Multi-subreddit Reddit OAuth API client (Client Credentials)
 │   │   ├── scheduler.py             # APScheduler cron job orchestrating discovery, core intel, & synthesis
 │   │   ├── scoring_weights.py       # Centralized dynamic weights registry with persistence
@@ -167,6 +167,12 @@ stock-picker/
 7. **Automated Telegram Consolidated Digest with Deduplication**:
    - *Choice*: Outbound direct REST calls via `httpx` to Telegram Bot API with hash-based deduplication cache and HTML parse mode.
    - *Trade-off*: Guarantees zero duplicate alerts across rapid invocations while skipping dispatch gracefully when unconfigured.
+8. **Dual-Layer Relational Architecture (`_raw` vs `_reports`)**:
+   - *Choice*: Separates immutable raw evidence tables (`core_equity_raw`, `retail_social_raw`, `insider_trades_raw`, `congress_trades_raw`, `options_whale_raw`) from synthesized intelligence reports (`core_equity_reports`, `retail_sentiment_reports`, `smart_money_reports`, `options_whale_reports`, `synthesis_reports`).
+   - *Trade-off*: Slightly more granular tables, but enables zero data loss, exact auditability of LLM inputs, reusability of raw insider/congress data across future models, and seamless backtesting with zero frontend schema breakage.
+9. **Strictly Normalized Overlays (Single Source of Truth)**:
+   - *Choice*: `core_equity_reports` is the canonical owner of corporate fundamentals, ground truth status, SEC disclosures, and risk profiles. Specialized report overlays (`retail_sentiment_reports`, `smart_money_reports`, `options_whale_reports`) reference `core_intel_id` without duplicating ground truth or raw metric columns.
+   - *Trade-off*: Requires relational joins/eager loading, but prevents data drift across reports and eliminates redundant JSON storage.
 
 ---
 

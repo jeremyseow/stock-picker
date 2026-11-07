@@ -6,12 +6,12 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 
 from app.database import Base, get_db
 from app.models import (
-    CoreEquityIntel,
+    CoreEquityReport,
     DailyTicker,
-    RetailReport,
+    RetailSentimentReport,
     SmartMoneyReport,
     SmartMoneyTicker,
-    SynthesisRecord,
+    SynthesisReport,
 )
 from app.main import app
 
@@ -45,7 +45,7 @@ async def test_canonical_retail_endpoints_and_removed_legacy(app_client):
     now = datetime.now(timezone.utc)
 
     async with session_maker() as session:
-        retail = RetailReport(
+        retail = RetailSentimentReport(
             ticker="TSLA",
             date=now,
             rank=1,
@@ -91,7 +91,7 @@ async def test_canonical_master_report_and_removed_legacy(app_client):
     now = datetime.now(timezone.utc)
 
     async with session_maker() as session:
-        intel = CoreEquityIntel(
+        intel = CoreEquityReport(
             ticker="NVDA",
             date=now,
             company_name="NVIDIA Corporation",
@@ -108,7 +108,7 @@ async def test_canonical_master_report_and_removed_legacy(app_client):
             raw_metrics={"trailingPE": 45.2, "forwardPE": 28.5},
             raw_news=[],
         )
-        synthesis = SynthesisRecord(
+        synthesis = SynthesisReport(
             ticker="NVDA",
             date=now,
             archetype="The Rocket",
@@ -172,7 +172,7 @@ async def test_smart_money_detail_embeds_core_intel(app_client):
             risk_score="Low",
             raw_metrics={"marketCap": 210000000000, "trailingPE": 28.4},
         )
-        intel = CoreEquityIntel(
+        intel = CoreEquityReport(
             ticker="ACN",
             date=now,
             company_name="Accenture plc",

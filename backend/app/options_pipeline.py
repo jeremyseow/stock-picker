@@ -34,7 +34,7 @@ async def run_options_pipeline(
     1. Gathers candidate pool from Engine 1, Engine 2, and liquid options universe.
     2. Fetches option chains & detects unusual Volume > 2.5x OI and OTM call sweeps.
     3. Scores and ranks top whale options candidates.
-    4. Attaches shared CoreEquityIntel fundamental ground truth.
+    4. Attaches shared CoreEquityReport fundamental ground truth.
     5. Saves records to options_whale_tickers and options_whale_reports.
     """
     logger.info("Starting Engine 3: Institutional Whale Options Radar pipeline...")
@@ -89,12 +89,12 @@ async def run_options_pipeline(
         # Save top ticker rows
         await save_options_whale_tickers(db, ranked_candidates)
 
-        # Generate individual reports linked with CoreEquityIntel
+        # Generate individual reports linked with CoreEquityReport
         saved_reports: List[OptionsWhaleReport] = []
         for candidate in ranked_candidates:
             sym = candidate["ticker"]
             try:
-                # Link or generate CoreEquityIntel
+                # Link or generate CoreEquityReport
                 core_intel = await research_core_equity_intel(sym, db=db)
                 report = await save_options_whale_report(
                     db=db,

@@ -7,11 +7,11 @@ from sqlalchemy.future import select
 from sqlalchemy import desc, func
 
 from app.database import init_db, get_db, AsyncSessionLocal
-from app.models import DailyTicker, RetailReport
+from app.models import DailyTicker, RetailSentimentReport
 from app.scheduler import setup_scheduler
 from app.crud import (
     get_distinct_report_dates,
-    get_reports_by_date,
+    get_retail_reports_by_date,
     get_distinct_tracked_tickers,
     get_ticker_history,
     get_cached_trajectory_analysis,
@@ -20,13 +20,13 @@ from app.crud import (
     get_latest_smart_money_report,
     get_smart_money_report_by_ticker,
     get_smart_money_reports_by_date,
-    get_latest_synthesis_records,
-    get_synthesis_records_by_date,
-    get_synthesis_record_by_ticker,
+    get_latest_synthesis_reports,
+    get_synthesis_reports_by_date,
+    get_synthesis_report_by_ticker,
     get_ticker_archetype_history,
-    get_latest_core_equity_intel,
-    get_core_equity_intel_by_ticker,
-    get_core_equity_intel_by_id,
+    get_latest_core_equity_report,
+    get_core_equity_report_by_ticker,
+    get_core_equity_report_by_id,
     get_latest_retail_report,
     get_retail_report_by_ticker,
     get_latest_options_whale_tickers,
@@ -38,7 +38,7 @@ from app.crud import (
 from app.options_pipeline import run_options_pipeline
 from app.backtest_engine import run_walk_forward_backtest
 from app.scoring_weights import get_active_weights, update_active_weights
-from app.pipeline import run_analysis_pipeline
+from app.retail_pipeline import run_retail_pipeline
 from app.smart_money_pipeline import run_smart_money_pipeline
 from app.smart_money_researcher import get_historical_trade_price
 from app.synthesis_engine import generate_cross_engine_synthesis
@@ -100,7 +100,7 @@ async def get_todays_tickers(db: AsyncSession = Depends(get_db)):
     combined = []
     for t in tickers:
         # Fetch the latest report for this ticker
-        report_query = select(RetailReport).where(RetailReport.ticker == t.ticker).order_by(desc(RetailReport.date)).limit(1)
+        report_query = select(RetailSentimentReport).where(RetailSentimentReport.ticker == t.ticker).order_by(desc(RetailSentimentReport.date)).limit(1)
         report_res = await db.execute(report_query)
         report = report_res.scalar_one_or_none()
         
@@ -140,7 +140,7 @@ async def get_reports_by_query(
             return []
         date = available_dates[0]
 
-    reports = await get_reports_by_date(db, date)
+    reports = await get_retail_reports_by_date(db, date)
     formatted = []
     for r in reports:
         formatted.append({
@@ -179,9 +179,9 @@ async def get_retail_report_detail(
     
     core_intel = None
     if retail_rep.core_intel_id:
-        core_intel = await get_core_equity_intel_by_id(db, retail_rep.core_intel_id)
+        core_intel = await get_core_equity_report_by_id(db, retail_rep.core_intel_id)
     if not core_intel:
-        core_intel = await get_core_equity_intel_by_ticker(db, ticker_sym, date)
+        core_intel = await get_core_equity_report_by_ticker(db, ticker_sym, date)
 
     return {
         "id": retail_rep.id,
@@ -223,7 +223,7 @@ async def get_ticker_report(
     ticker_sym = TICKER_ALIASES.get(ticker.upper(), ticker.upper())
     retail_rep = await get_retail_report_by_ticker(db, ticker_sym, date)
     smart_money_rep = await get_smart_money_report_by_ticker(db, ticker_sym, date)
-    synthesis_rec = await get_synthesis_record_by_ticker(db, ticker_sym, date)
+    synthesis_rec = await get_synthesis_report_by_ticker(db, ticker_sym, date)
 
     core_intel_id = (
         (retail_rep and retail_rep.core_intel_id)
@@ -232,9 +232,9 @@ async def get_ticker_report(
     )
     core_intel = None
     if core_intel_id:
-        core_intel = await get_core_equity_intel_by_id(db, core_intel_id)
+        core_intel = await get_core_equity_report_by_id(db, core_intel_id)
     if not core_intel:
-        core_intel = await get_core_equity_intel_by_ticker(db, ticker_sym, date)
+        core_intel = await get_core_equity_report_by_ticker(db, ticker_sym, date)
 
     if not core_intel and not retail_rep and not smart_money_rep and not synthesis_rec:
         date_msg = f" on {date}" if date else ""
@@ -377,7 +377,7 @@ async def get_ticker_report(
 async def get_ticker_report_text(ticker: str, db: AsyncSession = Depends(get_db)):
     """Get the latest report for a specific ticker formatted as plain text."""
     ticker = TICKER_ALIASES.get(ticker.upper(), ticker.upper())
-    query = select(RetailReport).where(RetailReport.ticker == ticker).order_by(desc(RetailReport.date)).limit(1)
+    query = select(RetailSentimentReport).where(RetailSentimentReport.ticker == ticker).order_by(desc(RetailSentimentReport.date)).limit(1)
     result = await db.execute(query)
     report = result.scalar_one_or_none()
     
@@ -672,9 +672,9 @@ async def get_smart_money_report_detail(
     
     core_intel = None
     if rep.core_intel_id:
-        core_intel = await get_core_equity_intel_by_id(db, rep.core_intel_id)
+        core_intel = await get_core_equity_report_by_id(db, rep.core_intel_id)
     if not core_intel:
-        core_intel = await get_core_equity_intel_by_ticker(db, ticker_sym, date)
+        core_intel = await get_core_equity_report_by_ticker(db, ticker_sym, date)
 
     inflow_ledger = []
     for item in (rep.inflow_ledger or []):
@@ -753,7 +753,7 @@ async def get_synthesis_reports_by_query(
             return []
         date = available_dates[0]
 
-    records = await get_synthesis_records_by_date(db, date)
+    records = await get_synthesis_reports_by_date(db, date)
     return [
         {
             "id": r.id,
@@ -770,6 +770,9 @@ async def get_synthesis_reports_by_query(
             "timing_edge_score": r.timing_edge_score,
             "synthesis_diagnosis": r.synthesis_diagnosis,
             "recommended_action": r.recommended_action,
+            "whale_options_flow": r.whale_options_flow,
+            "whale_options_score": r.whale_options_score,
+            "put_call_ratio": r.put_call_ratio,
         }
         for r in records
     ]
@@ -778,7 +781,7 @@ async def get_synthesis_reports_by_query(
 @app.get("/api/synthesis/today")
 async def get_today_synthesis(db: AsyncSession = Depends(get_db)):
     """Fetch the latest cross-engine archetype synthesis matrix records."""
-    records = await get_latest_synthesis_records(db)
+    records = await get_latest_synthesis_reports(db)
     return [
         {
             "id": r.id,
@@ -795,6 +798,9 @@ async def get_today_synthesis(db: AsyncSession = Depends(get_db)):
             "timing_edge_score": r.timing_edge_score,
             "synthesis_diagnosis": r.synthesis_diagnosis,
             "recommended_action": r.recommended_action,
+            "whale_options_flow": r.whale_options_flow,
+            "whale_options_score": r.whale_options_score,
+            "put_call_ratio": r.put_call_ratio,
         }
         for r in records
     ]
@@ -804,7 +810,7 @@ async def get_today_synthesis(db: AsyncSession = Depends(get_db)):
 async def trigger_retail_pipeline():
     """Triggers an on-demand execution of Engine 1 (Retail Momentum) and refreshes Cross-Engine Synthesis."""
     logger.info("Manual trigger received for Engine 1 (Retail Momentum)...")
-    await run_analysis_pipeline()
+    await run_retail_pipeline()
     try:
         async with AsyncSessionLocal() as db:
             await generate_cross_engine_synthesis(db)
@@ -854,8 +860,17 @@ async def get_options_today(db: AsyncSession = Depends(get_db)):
 
 
 @app.get("/api/options/reports")
-async def get_options_reports(date: str = Query(..., description="Target date in YYYY-MM-DD format"), db: AsyncSession = Depends(get_db)):
-    """Returns options whale reports generated on a specific historical date."""
+async def get_options_reports(
+    date: str | None = Query(None, description="Report date in YYYY-MM-DD format (or latest if omitted)"),
+    db: AsyncSession = Depends(get_db)
+):
+    """Returns options whale reports generated on a specific historical date, or latest available date if omitted."""
+    if not date:
+        available_dates = await get_distinct_report_dates(db)
+        if not available_dates:
+            return []
+        date = available_dates[0]
+
     reports = await get_options_reports_by_date(db, date)
     return [
         {
@@ -892,9 +907,9 @@ async def get_individual_options_report(
     rep = await get_options_whale_report_by_ticker(db, ticker, date)
     core = None
     if rep and rep.core_intel_id:
-        core = await get_core_equity_intel_by_id(db, rep.core_intel_id)
+        core = await get_core_equity_report_by_id(db, rep.core_intel_id)
     if not core:
-        core = await get_core_equity_intel_by_ticker(db, ticker, date)
+        core = await get_core_equity_report_by_ticker(db, ticker, date)
 
     if not rep and not core:
         date_msg = f" on {date}" if date else ""
