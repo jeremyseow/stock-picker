@@ -254,6 +254,9 @@ stock-picker/
 | | `/api/analytics/ticker/{ticker}` | GET | Historical multi-run trajectory series |
 | | `/api/analytics/ticker/{ticker}/archetypes` | GET | Chronological synthesis archetype progression |
 | | `/api/analytics/ticker/{ticker}/meta-analysis` | GET/POST | Trajectory meta-analysis (retrieval & on-demand generation) |
+| **Scheduler & Health** | `/health` | GET | Health check status |
+| | `/api/scheduler/status` | GET | Live background scheduler status, registered jobs, and next run times |
+
 
 ---
 

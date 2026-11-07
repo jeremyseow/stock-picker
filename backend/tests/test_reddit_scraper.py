@@ -160,3 +160,41 @@ def test_target_subreddits_default_and_custom(monkeypatch):
     monkeypatch.setenv("REDDIT_SUBREDDITS", "r/stocks, options, r/investing")
     assert get_target_subreddits() == ["stocks", "options", "investing"]
 
+
+@pytest.mark.asyncio
+async def test_save_retail_social_raw():
+    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+    from sqlalchemy.future import select
+    from app.database import Base
+    from app.models import RetailSocialRaw
+    from app.crud import save_retail_social_raw
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    candidate_items = [
+        {
+            "ticker": "NVDA",
+            "engagement_score": 1250.0,
+            "mention_count": 14,
+            "context_text": "[POST | Score: 200]: NVIDIA Blackwell ramp continues.",
+        }
+    ]
+
+    async with async_session() as db:
+        await save_retail_social_raw(db, candidate_items)
+
+        result = await db.execute(select(RetailSocialRaw).where(RetailSocialRaw.ticker == "NVDA"))
+        row = result.scalar_one()
+        assert row.ticker == "NVDA"
+        assert row.title == "Reddit discussions for NVDA"
+        assert row.score == 1250
+        assert row.comment_count == 14
+        assert "Blackwell ramp" in row.post_body
+
+    await engine.dispose()
+
+

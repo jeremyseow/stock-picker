@@ -204,3 +204,19 @@ async def test_smart_money_detail_embeds_core_intel(app_client):
     assert data["core_intel"]["risk_analysis"] == "Strong balance sheet, pristine debt/equity ratio."
     assert data["core_intel"]["raw_metrics"]["forwardPE"] == 23.1
 
+
+@pytest.mark.asyncio
+async def test_scheduler_status_endpoint(app_client):
+    client, _ = app_client
+    res = await client.get("/api/scheduler/status")
+    assert res.status_code == 200
+    data = res.json()
+    assert "scheduler_running" in data
+    assert data["timezone"] == "Asia/Singapore"
+    assert "jobs" in data
+    assert any(j["id"] == "daily_market_intelligence_pipeline" for j in data["jobs"])
+    job = next(j for j in data["jobs"] if j["id"] == "daily_market_intelligence_pipeline")
+    assert job["misfire_grace_time"] == 3600
+    assert job["coalesce"] is True
+
+

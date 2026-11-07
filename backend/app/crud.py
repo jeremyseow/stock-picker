@@ -29,12 +29,15 @@ async def save_retail_social_raw(db: AsyncSession, raw_social_items: list[dict])
         sym = item["ticker"].upper()
         raw_social = RetailSocialRaw(
             ticker=sym,
+            platform=item.get("platform", "reddit"),
+            post_id=item.get("post_id"),
             subreddit=item.get("subreddit", "wallstreetbets,stocks"),
-            post_title=item.get("post_title") or f"Reddit discussions for {sym}",
-            post_body=item.get("post_body"),
-            sentiment_hint=item.get("sentiment_hint"),
-            engagement_score=float(item.get("engagement_score", 0.0)),
-            raw_context=item.get("context_text"),
+            title=item.get("title") or item.get("post_title") or f"Reddit discussions for {sym}",
+            author=item.get("author"),
+            score=int(item.get("score") or item.get("engagement_score") or 0),
+            comment_count=int(item.get("comment_count") or item.get("mention_count") or 0),
+            post_url=item.get("post_url"),
+            post_body=item.get("post_body") or item.get("context_text"),
         )
         db.add(raw_social)
     await db.commit()

@@ -990,3 +990,31 @@ async def apply_calibrated_weights(payload: dict = None, db: AsyncSession = Depe
     }
 
 
+# ==========================================
+# Scheduler Observability Endpoints
+# ==========================================
+
+@app.get("/api/scheduler/status")
+async def get_scheduler_status():
+    """Returns the live status, configuration, and next run times of all scheduled background jobs."""
+    jobs_info = []
+    if scheduler:
+        for j in scheduler.get_jobs():
+            next_run = getattr(j, "next_run_time", None)
+            jobs_info.append({
+                "id": j.id,
+                "name": j.name,
+                "next_run_time": next_run.isoformat() if next_run else None,
+                "misfire_grace_time": getattr(j, "misfire_grace_time", None),
+                "coalesce": getattr(j, "coalesce", False),
+            })
+
+    return {
+        "scheduler_running": scheduler.running if scheduler else False,
+        "timezone": "Asia/Singapore",
+        "jobs_count": len(jobs_info),
+        "jobs": jobs_info,
+    }
+
+
+
