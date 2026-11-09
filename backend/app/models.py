@@ -550,3 +550,76 @@ class ModelCalibrationRun(Base):
     recommended_weights = Column(JSON, nullable=True)
     is_applied = Column(Integer, default=0)  # 1 if applied to active configuration
 
+
+# ==========================================
+# Paper Trading Portfolio Ledger
+# ==========================================
+
+class PortfolioAccount(Base):
+    """Primary ledger account for simulated paper trading."""
+    __tablename__ = "portfolio_accounts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, default="Primary Fund")
+    initial_balance = Column(Float, default=100000.0)
+    cash_balance = Column(Float, default=100000.0)
+    total_equity = Column(Float, default=100000.0)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    positions = relationship("PortfolioPosition", back_populates="account", cascade="all, delete-orphan")
+    snapshots = relationship("PortfolioSnapshot", back_populates="account", cascade="all, delete-orphan")
+
+
+class PortfolioPosition(Base):
+    """Tracks active and historical simulated positions with trade exit execution."""
+    __tablename__ = "portfolio_positions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    account_id = Column(Integer, ForeignKey("portfolio_accounts.id"), nullable=False, index=True)
+    ticker = Column(String, nullable=False, index=True)
+    archetype = Column(String, nullable=False)
+    conviction_score = Column(Float, default=0.0)
+    status = Column(String, default="OPEN", index=True)  # OPEN or CLOSED
+    shares = Column(Integer, nullable=False)
+    entry_date = Column(DateTime, nullable=False, index=True)
+    entry_price = Column(Float, nullable=False)
+    current_price = Column(Float, nullable=True)
+    target_price = Column(Float, nullable=True)
+    stop_loss_price = Column(Float, nullable=False)
+    exit_date = Column(DateTime, nullable=True, index=True)
+    exit_price = Column(Float, nullable=True)
+    exit_reason = Column(String, nullable=True)  # STOP_LOSS, TAKE_PROFIT, TIME_EXIT, MANUAL
+    realized_pnl = Column(Float, nullable=True)
+    unrealized_pnl = Column(Float, nullable=True)
+    return_pct = Column(Float, nullable=True)
+    holding_days = Column(Integer, default=0)
+    spy_entry_price = Column(Float, nullable=True)
+    spy_exit_price = Column(Float, nullable=True)
+    spy_return_pct = Column(Float, nullable=True)
+    excess_alpha_pct = Column(Float, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    account = relationship("PortfolioAccount", back_populates="positions")
+
+
+class PortfolioSnapshot(Base):
+    """Daily equity curve snapshots and market benchmark comparisons."""
+    __tablename__ = "portfolio_snapshots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    account_id = Column(Integer, ForeignKey("portfolio_accounts.id"), nullable=False, index=True)
+    snapshot_date = Column(DateTime, nullable=False, index=True)
+    cash_balance = Column(Float, nullable=False)
+    invested_capital = Column(Float, nullable=False)
+    total_equity = Column(Float, nullable=False)
+    portfolio_return_pct = Column(Float, default=0.0)
+    spy_price = Column(Float, nullable=True)
+    spy_return_pct = Column(Float, nullable=True)
+    excess_alpha_pct = Column(Float, nullable=True)
+    open_positions_count = Column(Integer, default=0)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    account = relationship("PortfolioAccount", back_populates="snapshots")
+

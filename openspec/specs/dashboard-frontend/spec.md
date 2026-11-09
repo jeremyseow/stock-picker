@@ -6,10 +6,10 @@ Provides a responsive Next.js web application for browsing daily trending stock 
 ## Requirements
 
 ### Requirement: Shared Navigation Header
-The frontend dashboard and all sub-routes SHALL feature a persistent, styled navigation header bar to switch between the main Dashboard (Retail Momentum), Smart Money & Gov, Cross-Engine Synthesis Matrix, Historical Reports, and Ticker Analytics.
+The frontend dashboard and all sub-routes SHALL feature a persistent, styled navigation header bar to switch between the main Dashboard (Retail Momentum), Smart Money & Gov, Cross-Engine Synthesis Matrix, Historical Reports, Ticker Analytics, and Paper Trading Portfolio.
 
 #### Scenario: Navigate Pages
-- **WHEN** a user clicks on "Retail Momentum", "Smart Money & Gov", "Synthesis Matrix", "Historical Reports", or "Ticker Analytics" links in the header
+- **WHEN** a user clicks on "Retail Momentum", "Smart Money & Gov", "Synthesis Matrix", "Historical Reports", "Ticker Analytics", or "Portfolio" links in the header
 - **THEN** the router navigates the user to the corresponding page.
 
 ### Requirement: Display Rich Daily Top Stocks List
@@ -107,3 +107,54 @@ The application SHALL provide consistently namespaced endpoints and unified link
   - `/api/smart-money/reports` and `/api/smart-money/report/{ticker}` (Engine 2)
   - `/api/synthesis/reports` and `/api/synthesis/latest` (Cross-Engine)
   - `/api/master/report/{ticker}` (Unified Master Report)
+
+### Requirement: Display Paper Trading Portfolio Dashboard
+The frontend SHALL provide a dedicated Paper Trading Portfolio page at `/portfolio` featuring portfolio KPI summary cards, an interactive equity performance curve benchmarked against SPY, an active positions table with manual close actions, and a closed trade journal.
+
+#### Scenario: View Portfolio KPI Summary Cards
+- **WHEN** a user navigates to `/portfolio`
+- **THEN** the page displays summary metric cards including:
+  - Total Portfolio Equity and Total Return ($ and %)
+  - Available Cash Balance vs Invested Capital
+  - Win Rate (% profitable closed trades)
+  - Cumulative Excess Alpha vs SPY benchmark
+  - Active Holdings count (e.g. `4 / 10 slots filled`)
+
+#### Scenario: View Interactive Equity Curve vs SPY
+- **WHEN** the portfolio has historical snapshots
+- **THEN** the dashboard renders an interactive SVG chart comparing Portfolio Equity Growth % against SPY Benchmark Growth % over time, with hover tooltips displaying date, portfolio value, and relative alpha.
+
+#### Scenario: Inspect Active Holdings and Trigger Manual Liquidation
+- **WHEN** a user views the Active Holdings table on `/portfolio`
+- **THEN** the table displays each open position with Ticker, Archetype badge, Entry Date, Entry Price, Current Price, Unrealized PnL ($ and %), Holding Days, and a "Close Position" button.
+- **WHEN** the user clicks "Close Position" and confirms
+- **THEN** the frontend sends a close request to `/api/portfolio/positions/{id}/close` and updates the active positions and trade journal upon completion.
+
+#### Scenario: Inspect Trade Journal
+- **WHEN** a user views the Trade Journal table on `/portfolio`
+- **THEN** the table displays historical closed trades with Ticker, Archetype, Entry Date, Exit Date, Holding Days, Exit Reason (`STOP_LOSS`, `TAKE_PROFIT`, `TIME_EXIT`, `MANUAL`), Realized PnL, Return %, and SPY Alpha %.
+
+### Requirement: Display Model Calibration and Backtest Scorecard
+The frontend dashboard SHALL provide a dedicated Model Calibration page (`/calibration`) displaying historical backtest win rates against the S&P 500, performance breakdowns by archetype, active scoring weights, and recommended tuned weights.
+
+#### Scenario: View Calibration Scorecard
+- **WHEN** the user navigates to `/calibration`
+- **THEN** the view displays:
+  - Top summary metrics: Overall Hit Rate at T+30, Average Alpha vs. SPY, Maximum Drawdown, and Sample Run Count.
+  - Archetype Performance Table: Average forward return, win rate, and risk metrics for The Rocket, Silent Accumulation, The Retail Trap, and Market Noise.
+  - Weights Comparison Table: Current production weights vs. recommended calibrated weights across Engine 1, Engine 2, Engine 3, and Cross-Engine Synthesis with projected alpha impact.
+
+#### Scenario: Apply Recommended Calibrated Weights
+- **WHEN** the user clicks the "Apply Recommended Weights" button on `/calibration`
+- **THEN** the frontend triggers a POST to `/api/calibration/apply-weights`, updates the active weights display, and renders a confirmation notification with the calibration timestamp.
+
+### Requirement: Display Whale Options Flow Radar
+The frontend dashboard SHALL provide views for Engine 3 Whale Options flow, including a dedicated tab in Historical Reports (`/stats`) and an Options Radar card on individual report pages.
+
+#### Scenario: View Options Whale Tab in Historical Reports
+- **WHEN** the user navigates to `/stats` and selects a historical date
+- **THEN** the tab bar displays a fourth tab `Whale Options (N)` displaying cards for all options flow picks recorded on that date.
+
+#### Scenario: View Whale Options Overlay on Stock Report
+- **WHEN** the user views a detailed stock report (`/report/[ticker]`)
+- **THEN** an Options Flow Radar card renders the put/call ratio, unusual volume-to-open-interest ratio, and top institutional call sweeps with expiration dates and strike prices.

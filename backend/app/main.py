@@ -34,6 +34,17 @@ from app.crud import (
     get_options_whale_report_by_ticker,
     get_options_reports_by_date,
     get_latest_model_calibration_run,
+    get_open_positions,
+    get_closed_positions,
+    get_portfolio_snapshots,
+    get_position_by_id,
+)
+from app.portfolio_engine import (
+    get_portfolio_summary_metrics,
+    close_position_manually,
+    execute_market_open_orders,
+    evaluate_market_close_exits,
+    bootstrap_portfolio_history,
 )
 from app.options_pipeline import run_options_pipeline
 from app.backtest_engine import run_walk_forward_backtest
@@ -1015,6 +1026,149 @@ async def get_scheduler_status():
         "jobs_count": len(jobs_info),
         "jobs": jobs_info,
     }
+
+
+# ==========================================
+# Paper Trading Portfolio Endpoints
+# ==========================================
+
+@app.get("/api/portfolio/summary")
+async def get_portfolio_summary(db: AsyncSession = Depends(get_db)):
+    """Retrieve top-level paper trading portfolio KPIs, balances, win rate, and benchmark alpha."""
+    return await get_portfolio_summary_metrics(db)
+
+
+@app.get("/api/portfolio/positions")
+async def get_portfolio_open_positions(db: AsyncSession = Depends(get_db)):
+    """Retrieve all active open positions in the paper portfolio."""
+    positions = await get_open_positions(db)
+    return [
+        {
+            "id": p.id,
+            "account_id": p.account_id,
+            "ticker": p.ticker,
+            "archetype": p.archetype,
+            "conviction_score": p.conviction_score,
+            "status": p.status,
+            "shares": p.shares,
+            "entry_date": p.entry_date.isoformat() if p.entry_date else None,
+            "entry_price": p.entry_price,
+            "current_price": p.current_price,
+            "target_price": p.target_price,
+            "stop_loss_price": p.stop_loss_price,
+            "unrealized_pnl": p.unrealized_pnl,
+            "return_pct": p.return_pct,
+            "holding_days": p.holding_days,
+            "spy_entry_price": p.spy_entry_price,
+        }
+        for p in positions
+    ]
+
+
+@app.post("/api/portfolio/positions/{position_id}/close")
+async def manual_close_portfolio_position(position_id: int, db: AsyncSession = Depends(get_db)):
+    """Manually liquidates an open paper position at current market price."""
+    try:
+        closed = await close_position_manually(db, position_id=position_id)
+        return {
+            "status": "success",
+            "message": f"Position {position_id} ({closed.ticker}) successfully liquidated.",
+            "position": {
+                "id": closed.id,
+                "ticker": closed.ticker,
+                "status": closed.status,
+                "exit_price": closed.exit_price,
+                "exit_date": closed.exit_date.isoformat() if closed.exit_date else None,
+                "exit_reason": closed.exit_reason,
+                "realized_pnl": closed.realized_pnl,
+                "return_pct": closed.return_pct,
+                "excess_alpha_pct": closed.excess_alpha_pct,
+            },
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception(f"Error during manual liquidation of position {position_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal liquidation error: {str(e)}")
+
+
+@app.get("/api/portfolio/journal")
+async def get_portfolio_trade_journal(
+    limit: int = Query(100, ge=1, le=500), db: AsyncSession = Depends(get_db)
+):
+    """Retrieve historical closed trade ledger with holding days, exit reasons, and excess SPY alpha."""
+    closed = await get_closed_positions(db, limit=limit)
+    return [
+        {
+            "id": p.id,
+            "account_id": p.account_id,
+            "ticker": p.ticker,
+            "archetype": p.archetype,
+            "conviction_score": p.conviction_score,
+            "shares": p.shares,
+            "entry_date": p.entry_date.isoformat() if p.entry_date else None,
+            "entry_price": p.entry_price,
+            "exit_date": p.exit_date.isoformat() if p.exit_date else None,
+            "exit_price": p.exit_price,
+            "exit_reason": p.exit_reason,
+            "realized_pnl": p.realized_pnl,
+            "return_pct": p.return_pct,
+            "holding_days": p.holding_days,
+            "spy_entry_price": p.spy_entry_price,
+            "spy_exit_price": p.spy_exit_price,
+            "spy_return_pct": p.spy_return_pct,
+            "excess_alpha_pct": p.excess_alpha_pct,
+        }
+        for p in closed
+    ]
+
+
+@app.get("/api/portfolio/snapshots")
+async def get_portfolio_equity_snapshots(
+    limit: int = Query(180, ge=1, le=1000), db: AsyncSession = Depends(get_db)
+):
+    """Retrieve chronological equity curve snapshots benchmarked against SPY."""
+    snapshots = await get_portfolio_snapshots(db, limit=limit)
+    return [
+        {
+            "id": s.id,
+            "snapshot_date": s.snapshot_date.isoformat() if s.snapshot_date else None,
+            "cash_balance": s.cash_balance,
+            "invested_capital": s.invested_capital,
+            "total_equity": s.total_equity,
+            "portfolio_return_pct": s.portfolio_return_pct,
+            "spy_price": s.spy_price,
+            "spy_return_pct": s.spy_return_pct,
+            "excess_alpha_pct": s.excess_alpha_pct,
+            "open_positions_count": s.open_positions_count,
+        }
+        for s in snapshots
+    ]
+
+
+@app.post("/api/portfolio/backfill")
+async def trigger_portfolio_backfill(payload: dict = None, db: AsyncSession = Depends(get_db)):
+    """Simulates paper trading across all existing historical synthesis reports."""
+    reset = payload.get("reset", True) if payload else True
+    logger.info(f"Triggering historical portfolio backfill (reset={reset})...")
+    result = await bootstrap_portfolio_history(db, reset=reset)
+    return result
+
+
+@app.post("/api/portfolio/trigger-open")
+async def trigger_market_open_job(payload: dict = None, db: AsyncSession = Depends(get_db)):
+    """Manual on-demand execution of US Market Open order fills."""
+    date_str = payload.get("date") if payload else None
+    result = await execute_market_open_orders(db, date_str=date_str)
+    return result
+
+
+@app.post("/api/portfolio/trigger-close")
+async def trigger_market_close_job(db: AsyncSession = Depends(get_db)):
+    """Manual on-demand execution of US Market Close exit evaluation & mark-to-market."""
+    result = await evaluate_market_close_exits(db)
+    return result
+
 
 
 

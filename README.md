@@ -9,6 +9,8 @@ All discovery engines link into a decoupled, reusable **Core Equity Intelligence
 
 An empirical **Walk-Forward Model Calibration Engine** evaluates live forward returns ($T+5, T+15, T+30$) against the S&P 500 (`SPY`) benchmark, presenting live cohort maturation scorecards and mathematically tuning scoring weights across all engines via an interactive `/calibration` dashboard.
 
+An **Automated Paper Trading Portfolio & Trade Journal** (`portfolio_engine.py`) models a \$100,000 institutional fund that automatically executes pending high-conviction synthesis signals (*The Rocket*, *Silent Accumulation*) at US Market Open (09:30 ET), enforces strict risk rules ($-7.0\%$ hard stop-loss, $+15.0\%$ take-profit target, and maturation time-decay exits), measures excess alpha over `SPY`, and maintains a permanent audit trade journal with manual liquidation controls at `/portfolio`.
+
 ---
 
 ## Architecture Diagram
@@ -52,6 +54,13 @@ graph TD
         BACKTEST -->|Tuned Weights| WEIGHTS_REG["Scoring Weights Registry<br/>scoring_weights.py"]
     end
 
+    subgraph PORTFOLIO["Paper Trading Portfolio Ledger"]
+        REP_SYN --> PORT_ENG["Portfolio Execution Engine<br/>portfolio_engine.py"]
+        PORT_ENG --> PORT_ACC[("portfolio_accounts")]
+        PORT_ENG --> PORT_POS[("portfolio_positions")]
+        PORT_ENG --> PORT_SNAP[("portfolio_snapshots")]
+    end
+
     subgraph BACKEND["Backend API (FastAPI)"]
         REP_CORE --> API["FastAPI Server<br/>main.py"]
         REP_RET --> API
@@ -59,6 +68,8 @@ graph TD
         REP_OPT --> API
         REP_SYN --> API
         CALIB_DB --> API
+        PORT_POS --> API
+        PORT_SNAP --> API
     end
 
     subgraph FRONTEND["Frontend Dashboard (Next.js)"]
@@ -68,6 +79,7 @@ graph TD
         API --> HIST["Historical Archives<br/>/stats"]
         API --> MASTER_REP["Unified Master Equity Report<br/>/report/:ticker"]
         API --> CALIB_PAGE["Model Calibration & Scorecard<br/>/calibration"]
+        API --> PORT_PAGE["Paper Trading Portfolio<br/>/portfolio"]
         API --> ANALYTICS["Ticker Analytics & Archetype Lifecycle<br/>/analytics"]
     end
 ```
@@ -92,10 +104,11 @@ stock-picker/
 │   │   ├── options_pipeline.py      # Engine 3 orchestrator for Institutional Whale Options Radar
 │   │   ├── options_scraper.py       # yfinance option chain scanner for unusual Volume > 2.5x OI & sweeps
 │   │   ├── options_scorer.py        # Whale Conviction Scorer (0-100) & put/call volume skew calculator
+│   │   ├── portfolio_engine.py      # Automated Paper Trading Portfolio ($100k ledger, market open fills, stops/targets, alpha)
 │   │   ├── retail_pipeline.py       # Engine 1 orchestrator for Retail Momentum Scout
 │   │   ├── pipeline.py              # Full multi-engine pipeline orchestrator (Engine 1 + 2 + 3 + Synthesis)
 │   │   ├── reddit_scraper.py        # Multi-subreddit Reddit OAuth API client (Client Credentials)
-│   │   ├── scheduler.py             # APScheduler cron job orchestrating discovery, core intel, & synthesis
+│   │   ├── scheduler.py             # APScheduler cron jobs: 19:00 SGT pipeline, 09:30 ET market open, 16:00 ET market close
 │   │   ├── scoring_weights.py       # Centralized dynamic weights registry with persistence
 │   │   ├── smart_money_ingestor.py  # Market-wide SEC Form 4 (Code P) and Capitol Hill STOCK Act disclosures
 │   │   ├── smart_money_pipeline.py  # Engine 2 orchestrator for Smart Money Inflow Overlay
@@ -105,13 +118,17 @@ stock-picker/
 │   │   ├── telegram_notifier.py     # Telegram Bot API client with deduplication cache
 │   │   └── ticker_extractor.py      # Regex extraction, noise blacklist filtering, and engagement scoring
 │   ├── scripts/
-│   │   └── reset_and_run.py         # Full database wipe & end-to-end multi-engine execution
+│   │   ├── reset_and_run.py         # Full database wipe & end-to-end multi-engine execution
+│   │   └── run_portfolio_bootstrap.py # Historical simulation bootstrap for paper trading ledger
 │   ├── tests/
 │   │   ├── test_analytics_api.py    # Async integration tests for dates & analytics endpoints
 │   │   ├── test_api_endpoints.py    # Symmetrical namespaced endpoints (/api/retail, /api/master, /api/smart-money)
 │   │   ├── test_core_intel_and_tabs.py # Tests for Core Intel caching, candidate deduplication, & historical tab APIs
 │   │   ├── test_evals.py            # LLM evaluation and ticker validation tests
 │   │   ├── test_options_and_calibration.py # Tests for options scoring, backtest alpha math, and weights registry
+│   │   ├── test_portfolio_api.py    # Portfolio REST API integration tests (positions, close, journal, snapshots)
+│   │   ├── test_portfolio_crud.py   # Database CRUD unit tests for portfolio accounts, positions, snapshots
+│   │   ├── test_portfolio_engine.py # Core paper trading logic tests (qualification, fills, exits, manual liquidation)
 │   │   ├── test_smart_money.py      # Form 4 extraction, smart money serialization & guardrails
 │   │   ├── test_smart_money_political.py # Engine 2 scoring, committee mapping & archetype tests
 │   │   └── test_telegram_notifier.py# Telegram digest formatting & dispatch tests
@@ -131,9 +148,13 @@ stock-picker/
 │   │   │   ├── synthesis/page.tsx   # Cross-Engine Synthesis Matrix & Retail Awareness Gauge
 │   │   │   ├── stats/page.tsx       # Historical Reports explorer: 3 Dedicated Tabs (Retail, Smart Money, Synthesis)
 │   │   │   ├── analytics/page.tsx   # Multi-run Ticker Analytics, trajectory chart & Archetype Lifecycle
+│   │   │   ├── portfolio/page.tsx   # Automated Paper Trading Portfolio ($100k fund, active holdings, equity curve vs SPY, trade journal)
 │   │   │   └── report/[ticker]/     # Unified Master Report: Contrarian Playbook + Core Intel + Institutional Capital Flow (Inflow & Outflow Ledgers) + Options Flow Card
 │   │   ├── components/
-│   │   │   ├── Navbar.tsx           # Persistent top navigation bar across all 6 sections
+│   │   │   ├── Navbar.tsx           # Persistent top navigation bar across all 7 sections
+│   │   │   ├── PortfolioEquityChart.tsx # Interactive SVG equity curve comparing Portfolio return % against SPY benchmark
+│   │   │   ├── ActivePositionsTable.tsx # Live active holdings table with real-time PnL and manual "Close Now" button
+│   │   │   ├── TradeJournalTable.tsx    # Comprehensive closed trade audit ledger with exit reasons, return %, and SPY alpha %
 │   │   │   ├── OptionsFlowCard.tsx  # Whale Options Radar card: Volume/OI ratio, OTM call sweeps, and put/call skew
 │   │   │   ├── ContrarianPlaybook.tsx # Cross-Engine Divergence Heatmap, execution tactics & lifecycle vector
 │   │   │   ├── SmartMoneyRadar.tsx  # Form 4 executive flow & Capitol Hill disclosures
@@ -261,6 +282,14 @@ stock-picker/
 | | `/api/analytics/ticker/{ticker}` | GET | Historical multi-run trajectory series |
 | | `/api/analytics/ticker/{ticker}/archetypes` | GET | Chronological synthesis archetype progression |
 | | `/api/analytics/ticker/{ticker}/meta-analysis` | GET/POST | Trajectory meta-analysis (retrieval & on-demand generation) |
+| **Paper Portfolio** | `/api/portfolio/summary` | GET | Portfolio summary KPIs, total equity, cash, win rate, and excess alpha |
+| | `/api/portfolio/positions` | GET | Active open positions with real-time mark-to-market and unrealized PnL |
+| | `/api/portfolio/positions/{id}/close` | POST | Manually close an active position immediately at market price |
+| | `/api/portfolio/journal` | GET | Historical closed trade ledger with holding days, exit reasons, and SPY alpha |
+| | `/api/portfolio/snapshots` | GET | Chronological equity curve snapshots benchmarked against SPY |
+| | `/api/portfolio/backfill` | POST | Replay historical paper trading over existing synthesis reports |
+| | `/api/portfolio/trigger-open` | POST | On-demand trigger for US Market Open order fills |
+| | `/api/portfolio/trigger-close` | POST | On-demand trigger for US Market Close exit evaluation & mark-to-market |
 | **Scheduler & Health** | `/health` | GET | Health check status |
 | | `/api/scheduler/status` | GET | Live background scheduler status, registered jobs, and next run times |
 

@@ -19,6 +19,9 @@ from app.models import (
     InsiderTradesRaw,
     CongressTradesRaw,
     OptionsWhaleRaw,
+    PortfolioAccount,
+    PortfolioPosition,
+    PortfolioSnapshot,
 )
 from app.llm_schemas import StockReport, TrajectoryAnalysis
 
@@ -1018,3 +1021,260 @@ async def get_latest_model_calibration_run(db: AsyncSession) -> ModelCalibration
     )
     result = await db.execute(query)
     return result.scalar_one_or_none()
+
+
+# ==========================================
+# Paper Trading Portfolio CRUD
+# ==========================================
+
+async def get_or_create_portfolio_account(
+    db: AsyncSession, name: str = "Primary Fund", initial_balance: float = 100000.0
+) -> PortfolioAccount:
+    """Retrieve existing primary paper trading account or initialize default account with $100k."""
+    query = select(PortfolioAccount).where(PortfolioAccount.name == name).limit(1)
+    result = await db.execute(query)
+    account = result.scalar_one_or_none()
+    if account is None:
+        account = PortfolioAccount(
+            name=name,
+            initial_balance=initial_balance,
+            cash_balance=initial_balance,
+            total_equity=initial_balance,
+        )
+        db.add(account)
+        await db.commit()
+        await db.refresh(account)
+    return account
+
+
+async def get_portfolio_account(
+    db: AsyncSession, account_id: int | None = None
+) -> PortfolioAccount | None:
+    """Retrieve portfolio account by ID or default first account."""
+    if account_id:
+        query = select(PortfolioAccount).where(PortfolioAccount.id == account_id)
+    else:
+        query = select(PortfolioAccount).order_by(PortfolioAccount.id.asc()).limit(1)
+    result = await db.execute(query)
+    return result.scalar_one_or_none()
+
+
+async def update_portfolio_account(
+    db: AsyncSession,
+    account: PortfolioAccount,
+    cash_balance: float | None = None,
+    total_equity: float | None = None,
+) -> PortfolioAccount:
+    """Update portfolio account cash balance and total equity."""
+    if cash_balance is not None:
+        account.cash_balance = round(cash_balance, 2)
+    if total_equity is not None:
+        account.total_equity = round(total_equity, 2)
+    account.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(account)
+    return account
+
+
+async def create_portfolio_position(
+    db: AsyncSession,
+    account_id: int,
+    ticker: str,
+    archetype: str,
+    conviction_score: float,
+    shares: int,
+    entry_price: float,
+    stop_loss_price: float,
+    target_price: float | None = None,
+    entry_date: datetime | None = None,
+    spy_entry_price: float | None = None,
+) -> PortfolioPosition:
+    """Create a new open paper position and deduct cost from account cash balance."""
+    entry_dt = entry_date or datetime.now(timezone.utc)
+    position = PortfolioPosition(
+        account_id=account_id,
+        ticker=ticker.upper(),
+        archetype=archetype,
+        conviction_score=conviction_score,
+        status="OPEN",
+        shares=shares,
+        entry_date=entry_dt,
+        entry_price=entry_price,
+        current_price=entry_price,
+        stop_loss_price=stop_loss_price,
+        target_price=target_price,
+        holding_days=0,
+        unrealized_pnl=0.0,
+        return_pct=0.0,
+        spy_entry_price=spy_entry_price,
+    )
+    db.add(position)
+
+    # Deduct cost from account cash
+    cost = round(shares * entry_price, 2)
+    account = await db.get(PortfolioAccount, account_id)
+    if account:
+        account.cash_balance = round(account.cash_balance - cost, 2)
+        account.updated_at = datetime.now(timezone.utc)
+
+    await db.commit()
+    await db.refresh(position)
+    return position
+
+
+async def get_open_positions(
+    db: AsyncSession, account_id: int | None = None
+) -> list[PortfolioPosition]:
+    """Retrieve all active open positions for an account."""
+    query = select(PortfolioPosition).where(PortfolioPosition.status == "OPEN")
+    if account_id is not None:
+        query = query.where(PortfolioPosition.account_id == account_id)
+    query = query.order_by(desc(PortfolioPosition.entry_date))
+    result = await db.execute(query)
+    return list(result.scalars().all())
+
+
+async def get_closed_positions(
+    db: AsyncSession, account_id: int | None = None, limit: int = 100
+) -> list[PortfolioPosition]:
+    """Retrieve closed historical positions for trade journal."""
+    query = select(PortfolioPosition).where(PortfolioPosition.status == "CLOSED")
+    if account_id is not None:
+        query = query.where(PortfolioPosition.account_id == account_id)
+    query = query.order_by(desc(PortfolioPosition.exit_date)).limit(limit)
+    result = await db.execute(query)
+    return list(result.scalars().all())
+
+
+async def get_position_by_id(
+    db: AsyncSession, position_id: int
+) -> PortfolioPosition | None:
+    """Retrieve a single portfolio position by ID."""
+    return await db.get(PortfolioPosition, position_id)
+
+
+async def update_open_position_price(
+    db: AsyncSession,
+    position: PortfolioPosition,
+    current_price: float,
+    holding_days: int | None = None,
+) -> PortfolioPosition:
+    """Update mark-to-market current price and unrealized PnL for an open position."""
+    position.current_price = round(current_price, 2)
+    if position.entry_price and position.entry_price > 0:
+        position.unrealized_pnl = round((position.current_price - position.entry_price) * position.shares, 2)
+        position.return_pct = round(((position.current_price - position.entry_price) / position.entry_price) * 100.0, 2)
+    if holding_days is not None:
+        position.holding_days = holding_days
+    position.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(position)
+    return position
+
+
+async def close_portfolio_position(
+    db: AsyncSession,
+    position: PortfolioPosition,
+    exit_price: float,
+    exit_reason: str,
+    exit_date: datetime | None = None,
+    spy_exit_price: float | None = None,
+) -> PortfolioPosition:
+    """Close an open position, calculate realized PnL and SPY alpha, and credit proceeds to account."""
+    exit_dt = exit_date or datetime.now(timezone.utc)
+    proceeds = round(position.shares * exit_price, 2)
+    cost = round(position.shares * position.entry_price, 2)
+
+    position.status = "CLOSED"
+    position.exit_price = round(exit_price, 2)
+    position.current_price = round(exit_price, 2)
+    position.exit_date = exit_dt
+    position.exit_reason = exit_reason
+    position.realized_pnl = round(proceeds - cost, 2)
+    position.unrealized_pnl = 0.0
+
+    if position.entry_price and position.entry_price > 0:
+        position.return_pct = round(((exit_price - position.entry_price) / position.entry_price) * 100.0, 2)
+    else:
+        position.return_pct = 0.0
+
+    # Calculate SPY benchmark return and excess alpha
+    if spy_exit_price is not None:
+        position.spy_exit_price = round(spy_exit_price, 2)
+    if position.spy_entry_price and position.spy_exit_price and position.spy_entry_price > 0:
+        position.spy_return_pct = round(((position.spy_exit_price - position.spy_entry_price) / position.spy_entry_price) * 100.0, 2)
+        position.excess_alpha_pct = round(position.return_pct - position.spy_return_pct, 2)
+
+    # Calculate final holding days if entry_date and exit_date exist
+    if position.entry_date and exit_dt:
+        days = (exit_dt.date() - position.entry_date.date()).days
+        position.holding_days = max(1, days)
+
+    position.updated_at = datetime.now(timezone.utc)
+
+    # Return proceeds to account cash
+    account = await db.get(PortfolioAccount, position.account_id)
+    if account:
+        account.cash_balance = round(account.cash_balance + proceeds, 2)
+        account.updated_at = datetime.now(timezone.utc)
+
+    await db.commit()
+    await db.refresh(position)
+    return position
+
+
+async def save_portfolio_snapshot(
+    db: AsyncSession,
+    account_id: int,
+    snapshot_date: datetime,
+    cash_balance: float,
+    invested_capital: float,
+    total_equity: float,
+    portfolio_return_pct: float,
+    spy_price: float | None = None,
+    spy_return_pct: float | None = None,
+    excess_alpha_pct: float | None = None,
+    open_positions_count: int = 0,
+) -> PortfolioSnapshot:
+    """Save a daily equity curve snapshot for the portfolio."""
+    snapshot = PortfolioSnapshot(
+        account_id=account_id,
+        snapshot_date=snapshot_date,
+        cash_balance=round(cash_balance, 2),
+        invested_capital=round(invested_capital, 2),
+        total_equity=round(total_equity, 2),
+        portfolio_return_pct=round(portfolio_return_pct, 2),
+        spy_price=round(spy_price, 2) if spy_price is not None else None,
+        spy_return_pct=round(spy_return_pct, 2) if spy_return_pct is not None else None,
+        excess_alpha_pct=round(excess_alpha_pct, 2) if excess_alpha_pct is not None else None,
+        open_positions_count=open_positions_count,
+    )
+    db.add(snapshot)
+    await db.commit()
+    await db.refresh(snapshot)
+    return snapshot
+
+
+async def get_portfolio_snapshots(
+    db: AsyncSession, account_id: int | None = None, limit: int = 180
+) -> list[PortfolioSnapshot]:
+    """Retrieve chronological portfolio equity snapshots for charting."""
+    query = select(PortfolioSnapshot)
+    if account_id is not None:
+        query = query.where(PortfolioSnapshot.account_id == account_id)
+    query = query.order_by(PortfolioSnapshot.snapshot_date.asc()).limit(limit)
+    result = await db.execute(query)
+    return list(result.scalars().all())
+
+
+async def get_latest_portfolio_snapshot(
+    db: AsyncSession, account_id: int | None = None
+) -> PortfolioSnapshot | None:
+    """Retrieve the most recent portfolio snapshot."""
+    query = select(PortfolioSnapshot)
+    if account_id is not None:
+        query = query.where(PortfolioSnapshot.account_id == account_id)
+    query = query.order_by(desc(PortfolioSnapshot.snapshot_date)).limit(1)
+    result = await db.execute(query)
+    return result.scalar_one_or_none()
+

@@ -13,6 +13,7 @@ export default function Navbar() {
     { label: "Historical Reports", href: "/stats" },
     { label: "Ticker Analytics", href: "/analytics" },
     { label: "Model Calibration", href: "/calibration" },
+    { label: "Paper Portfolio", href: "/portfolio" },
   ];
 
   return (
