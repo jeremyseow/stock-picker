@@ -1,6 +1,7 @@
 import yfinance as yf
 import logging
 import re
+import requests
 from ddgs import DDGS
 from app.ticker_extractor import TICKER_ALIASES
 
@@ -61,30 +62,13 @@ def fetch_sec_filings(ticker_symbol: str, limit: int = 5) -> list:
 
 def fetch_recent_news(ticker_symbol: str, limit: int = 5) -> list:
     """
-    Fetches recent news headlines for a given ticker using yfinance with DDGS news fallback.
+    Fetches recent news headlines for a given ticker using DuckDuckGo News as primary,
+    with Yahoo Finance search API and DDGS web search as resilient fallbacks.
     """
     ticker_clean = TICKER_ALIASES.get(ticker_symbol.upper(), ticker_symbol.upper())
     logger.info(f"Fetching recent news for {ticker_clean}")
 
-    # Attempt 1: yfinance stock.news
-    try:
-        stock = yf.Ticker(ticker_clean)
-        news_items = stock.news
-        if news_items:
-            headlines = []
-            for item in news_items[:limit]:
-                headlines.append({
-                    "title": item.get("title"),
-                    "publisher": item.get("publisher"),
-                    "link": item.get("link"),
-                    "provider_publish_time": item.get("providerPublishTime")
-                })
-            if headlines:
-                return headlines
-    except Exception as e:
-        logger.warning(f"yfinance news unavailable for {ticker_clean} ({e}), falling back to DDGS news.")
-
-    # Attempt 2: DuckDuckGo dedicated news search
+    # Primary: DuckDuckGo dedicated news search
     try:
         with DDGS() as ddgs:
             results = ddgs.news(f"{ticker_clean} stock", max_results=limit)
@@ -99,9 +83,30 @@ def fetch_recent_news(ticker_symbol: str, limit: int = 5) -> list:
             if headlines:
                 return headlines
     except Exception as e:
-        logger.warning(f"DDGS news search failed for {ticker_clean}: {e}")
+        logger.warning(f"DDGS news search failed for {ticker_clean}: {e}, falling back to Yahoo Finance Search API")
 
-    # Attempt 3: General DDGS web search fallback
+    # Fallback 1: Yahoo Finance Search API (query2.finance.yahoo.com)
+    try:
+        url = f"https://query2.finance.yahoo.com/v1/finance/search?q={ticker_clean}&newsCount={limit}"
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+        resp = requests.get(url, headers=headers, timeout=5)
+        if resp.status_code == 200:
+            data = resp.json()
+            raw_news = data.get("news", [])
+            headlines = []
+            for item in raw_news[:limit]:
+                headlines.append({
+                    "title": item.get("title"),
+                    "publisher": item.get("publisher"),
+                    "link": item.get("link"),
+                    "provider_publish_time": item.get("providerPublishTime")
+                })
+            if headlines:
+                return headlines
+    except Exception as e:
+        logger.warning(f"Yahoo Finance search news endpoint failed for {ticker_clean}: {e}, falling back to web search")
+
+    # Fallback 2: General DDGS web search fallback
     try:
         web_results = fetch_web_search_news(ticker_clean, limit=limit)
         if web_results:
