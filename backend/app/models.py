@@ -549,6 +549,7 @@ class ModelCalibrationRun(Base):
     active_weights = Column(JSON, nullable=False)
     recommended_weights = Column(JSON, nullable=True)
     is_applied = Column(Integer, default=0)  # 1 if applied to active configuration
+    scorecard_data = Column(JSON, nullable=True)
 
 
 # ==========================================

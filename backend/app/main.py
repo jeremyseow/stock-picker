@@ -975,7 +975,24 @@ async def trigger_options_run():
 
 @app.get("/api/calibration/scorecard")
 async def get_calibration_scorecard(db: AsyncSession = Depends(get_db)):
-    """Returns the performance scorecard, active weights, and recommended calibrated weights."""
+    """
+    Returns the latest performance scorecard, active weights, and recommended calibrated weights
+    from cache/database without triggering a new backtest run.
+    """
+    latest = await get_latest_model_calibration_run(db)
+    if latest and latest.scorecard_data:
+        return latest.scorecard_data
+    # If no run exists in database yet, compute baseline once
+    scorecard = await run_walk_forward_backtest(db)
+    return scorecard
+
+
+@app.post("/api/calibration/run")
+async def trigger_model_calibration(db: AsyncSession = Depends(get_db)):
+    """
+    Manually triggers walk-forward model calibration.
+    If no market data or configuration has changed, deduplicates and avoids creating redundant records.
+    """
     scorecard = await run_walk_forward_backtest(db)
     return scorecard
 
@@ -985,14 +1002,24 @@ async def apply_calibrated_weights(payload: dict = None, db: AsyncSession = Depe
     """
     Applies recommended or submitted calibrated weights to production configuration.
     """
+    latest = await get_latest_model_calibration_run(db)
     if payload and "weights" in payload:
         new_w = payload["weights"]
     else:
-        # Run backtest to compute latest recommended weights
-        backtest_res = await run_walk_forward_backtest(db)
-        new_w = backtest_res["recommended_weights"]
+        # Use latest recommended weights if available, otherwise compute
+        if latest and latest.recommended_weights:
+            new_w = latest.recommended_weights
+        else:
+            backtest_res = await run_walk_forward_backtest(db)
+            new_w = backtest_res["recommended_weights"]
 
     updated = update_active_weights(new_w)
+    if latest:
+        latest.is_applied = 1
+        if latest.scorecard_data and isinstance(latest.scorecard_data, dict):
+            latest.scorecard_data["active_weights"] = updated
+        await db.commit()
+
     return {
         "status": "success",
         "message": "Calibrated parameter weights successfully applied to production.",

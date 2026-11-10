@@ -82,11 +82,14 @@ interface CalibrationData {
   archetype_scorecard: Record<string, ArchetypeMetric>;
   live_cohort_records?: LiveCohortRecord[];
   weight_comparison_items: WeightComparisonItem[];
+  has_changes?: boolean;
+  message?: string;
 }
 
 export default function CalibrationPage() {
   const [data, setData] = useState<CalibrationData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [calibrating, setCalibrating] = useState(false);
   const [applying, setApplying] = useState(false);
   const [appliedMsg, setAppliedMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -109,6 +112,29 @@ export default function CalibrationPage() {
   useEffect(() => {
     fetchScorecard();
   }, []);
+
+  const handleTriggerCalibration = async () => {
+    setCalibrating(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/calibration/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!res.ok) throw new Error("Failed to run calibration");
+      const json = await res.json();
+      setData(json);
+      if (json.has_changes) {
+        setAppliedMsg("✓ Walk-forward model calibration completed. New metrics and recommendations recorded.");
+      } else {
+        setAppliedMsg("ℹ️ Model calibration is already up-to-date with current market data. No changes detected.");
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to trigger calibration");
+    } finally {
+      setCalibrating(false);
+    }
+  };
 
   const handleApplyWeights = async () => {
     setApplying(true);
@@ -155,19 +181,40 @@ export default function CalibrationPage() {
       <main className="flex-1 py-10 px-6">
         <div className="max-w-6xl mx-auto space-y-10">
           {/* Header */}
-          <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 mb-3">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span>Live Walk-Forward Maturation Tracker</span>
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 mb-3">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span>Live Walk-Forward Maturation Tracker</span>
+              </div>
+              <h1 className="text-3xl font-extrabold tracking-tight text-white sm:text-4xl">
+                Model Calibration & Walk-Forward Performance Tracker
+              </h1>
+              <p className="mt-2 text-slate-400 max-w-3xl text-sm leading-relaxed">
+                Longitudinally tracks live stock recommendations across T+5, T+15, and T+30 trading day horizons against
+                the S&P 500 (<code>SPY</code>). Synthetic placeholders have been removed: this dashboard reflects genuine
+                market returns as live trading sessions mature.
+              </p>
             </div>
-            <h1 className="text-3xl font-extrabold tracking-tight text-white sm:text-4xl">
-              Model Calibration & Walk-Forward Performance Tracker
-            </h1>
-            <p className="mt-2 text-slate-400 max-w-3xl text-sm leading-relaxed">
-              Longitudinally tracks live stock recommendations across T+5, T+15, and T+30 trading day horizons against
-              the S&P 500 (<code>SPY</code>). Synthetic placeholders have been removed: this dashboard reflects genuine
-              market returns as live trading sessions mature.
-            </p>
+            <div className="flex items-center gap-3 shrink-0">
+              <button
+                onClick={handleTriggerCalibration}
+                disabled={calibrating || loading}
+                className="px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider bg-slate-900 border border-indigo-500/40 hover:border-indigo-400 hover:bg-indigo-950/50 text-indigo-300 shadow-md transition-all flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+                title="Trigger a new walk-forward backtest evaluation"
+              >
+                {calibrating ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
+                    <span>Calibrating...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>⚡ Run Calibration</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
 
           {error && (

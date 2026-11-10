@@ -190,3 +190,50 @@ async def test_calibration_scorecard_and_apply_weights(client: AsyncClient, test
     # Clean up weights
     reset_weights_to_default()
 
+
+@pytest.mark.anyio
+async def test_model_calibration_trigger_and_deduplication(client: AsyncClient, test_db: AsyncSession):
+    """
+    Verifies that:
+    1. GET /api/calibration/scorecard reads cached data without creating duplicate DB records.
+    2. POST /api/calibration/run manually triggers calibration.
+    3. Multiple triggers when no changes occurred do NOT duplicate records in the database.
+    """
+    from sqlalchemy import select, func
+    from app.models import ModelCalibrationRun
+
+    # Initial state: 0 runs
+    count_init = (await test_db.execute(select(func.count(ModelCalibrationRun.id)))).scalar_one()
+
+    # 1. Trigger calibration explicitly via POST /api/calibration/run
+    r_run1 = await client.post("/api/calibration/run")
+    assert r_run1.status_code == 200
+    data1 = r_run1.json()
+    assert data1["has_changes"] is True
+    run1_id = data1["id"]
+
+    # Exactly 1 run should now exist
+    count_after_run1 = (await test_db.execute(select(func.count(ModelCalibrationRun.id)))).scalar_one()
+    assert count_after_run1 == count_init + 1
+
+    # 2. Trigger calibration a second time with NO data or weight changes
+    r_run2 = await client.post("/api/calibration/run")
+    assert r_run2.status_code == 200
+    data2 = r_run2.json()
+    assert data2["has_changes"] is False
+    assert data2["id"] == run1_id
+
+    # Count must remain strictly unchanged (no duplicate created!)
+    count_after_run2 = (await test_db.execute(select(func.count(ModelCalibrationRun.id)))).scalar_one()
+    assert count_after_run2 == count_after_run1
+
+    # 3. GET /api/calibration/scorecard retrieves scorecard without creating duplicate rows
+    r_get = await client.get("/api/calibration/scorecard")
+    assert r_get.status_code == 200
+    data_get = r_get.json()
+    assert data_get["id"] == run1_id
+
+    count_after_get = (await test_db.execute(select(func.count(ModelCalibrationRun.id)))).scalar_one()
+    assert count_after_get == count_after_run1
+
+

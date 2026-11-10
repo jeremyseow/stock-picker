@@ -275,7 +275,8 @@ stock-picker/
 | | `/api/synthesis/reports` | GET | Historical synthesis matrix records by `?date=` |
 | | `/api/master/report/{ticker}` | GET | Unified Master Report with Contrarian Playbook & multi-engine overlays (supports `?date=YYYY-MM-DD`) |
 | | `/api/master/report/{ticker}/text` | GET | Plain-text summary for notifications/bots |
-| **Calibration & Backtest** | `/api/calibration/scorecard` | GET | Walk-forward hit rates (T+30 vs SPY), archetype stats, and weight tuning |
+| **Calibration & Backtest** | `/api/calibration/scorecard` | GET | Retrieve latest cached walk-forward scorecard, archetype stats, and weight recommendations |
+| | `/api/calibration/run` | POST | Trigger on-demand walk-forward calibration with automatic duplicate deduplication |
 | | `/api/calibration/apply-weights` | POST | Persist approved calibrated weights into production configuration |
 | **Dates & Analytics** | `/api/dates` | GET | Distinct generated report dates across all engines |
 | | `/api/analytics/tickers` | GET | Distinct tracked tickers across all engines |

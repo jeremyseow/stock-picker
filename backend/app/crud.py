@@ -993,7 +993,8 @@ async def save_model_calibration_run(
     archetype_scorecard: dict,
     active_weights: dict,
     recommended_weights: dict,
-    is_applied: int = 0
+    is_applied: int = 0,
+    scorecard_data: dict | None = None
 ) -> ModelCalibrationRun:
     """Save a model calibration scorecard evaluation and weights run."""
     run = ModelCalibrationRun(
@@ -1004,7 +1005,8 @@ async def save_model_calibration_run(
         archetype_scorecard=archetype_scorecard,
         active_weights=active_weights,
         recommended_weights=recommended_weights,
-        is_applied=is_applied
+        is_applied=is_applied,
+        scorecard_data=scorecard_data,
     )
     db.add(run)
     await db.commit()

@@ -335,22 +335,34 @@ async def run_walk_forward_backtest(db: AsyncSession) -> Dict[str, Any]:
         },
     ]
 
-    # Save calibration run record to SQLite
-    run_record = await save_model_calibration_run(
-        db=db,
-        sample_runs_count=total_samples,
-        overall_hit_rate_t30=overall_hit_rate if overall_hit_rate is not None else (hit_rate_t5 or 0.0),
-        avg_alpha_vs_spy_t30=avg_alpha if avg_alpha is not None else (avg_alpha_t5 or 0.0),
-        max_drawdown=max_dd if max_dd is not None else 0.0,
-        archetype_scorecard=archetype_scorecard,
-        active_weights=active_weights,
-        recommended_weights=recommended_weights,
-        is_applied=0,
-    )
+    # Calculate horizon & scorecard values for comparison
+    target_hit_rate = overall_hit_rate if overall_hit_rate is not None else (hit_rate_t5 or 0.0)
+    target_avg_alpha = avg_alpha if avg_alpha is not None else (avg_alpha_t5 or 0.0)
+    target_max_dd = max_dd if max_dd is not None else 0.0
 
-    return {
-        "id": run_record.id,
-        "date": run_record.date.isoformat(),
+    # Fetch latest calibration run to detect changes
+    latest_run = await get_latest_model_calibration_run(db)
+
+    has_changes = True
+    if latest_run is not None:
+        is_same_samples = (latest_run.sample_runs_count == total_samples)
+        is_same_weights = (
+            latest_run.active_weights == active_weights and
+            latest_run.recommended_weights == recommended_weights
+        )
+        is_same_scorecard = (latest_run.archetype_scorecard == archetype_scorecard)
+        is_same_metrics = (
+            abs(float(latest_run.overall_hit_rate_t30 or 0.0) - float(target_hit_rate)) < 0.001 and
+            abs(float(latest_run.avg_alpha_vs_spy_t30 or 0.0) - float(target_avg_alpha)) < 0.001 and
+            abs(float(latest_run.max_drawdown or 0.0) - float(target_max_dd)) < 0.001
+        )
+        if is_same_samples and is_same_weights and is_same_scorecard and is_same_metrics:
+            has_changes = False
+
+    scorecard_payload = {
+        "id": latest_run.id if (latest_run and not has_changes) else None,
+        "date": latest_run.date.isoformat() if (latest_run and not has_changes and latest_run.date) else None,
+        "has_changes": has_changes,
         "is_maturing": not is_matured_t30,
         "maturation_meta": {
             "inception_date": earliest_date.strftime("%Y-%m-%d"),
@@ -384,7 +396,9 @@ async def run_walk_forward_backtest(db: AsyncSession) -> Dict[str, Any]:
             },
         },
         "sample_runs_count": total_samples,
+        "overall_hit_rate": overall_hit_rate,
         "overall_hit_rate_t30": overall_hit_rate,
+        "avg_alpha_vs_spy": avg_alpha,
         "avg_alpha_vs_spy_t30": avg_alpha,
         "max_drawdown": max_dd,
         "hit_rate_t5": hit_rate_t5,
@@ -395,4 +409,41 @@ async def run_walk_forward_backtest(db: AsyncSession) -> Dict[str, Any]:
         "recommended_weights": recommended_weights,
         "weight_comparison_items": weight_comparison_items,
     }
+
+    if not has_changes and latest_run is not None:
+        logger.info(
+            f"Model calibration triggered, but no changes detected against Run #{latest_run.id}. "
+            "Skipping duplicate DB insert."
+        )
+        if latest_run.scorecard_data is None:
+            latest_run.scorecard_data = scorecard_payload
+            await db.commit()
+            await db.refresh(latest_run)
+
+        scorecard_payload["id"] = latest_run.id
+        scorecard_payload["date"] = latest_run.date.isoformat() if latest_run.date else datetime.now(timezone.utc).isoformat()
+        scorecard_payload["message"] = "Model calibration is already up-to-date with current market data. No changes detected."
+        return scorecard_payload
+
+    # Save new calibration run record when changes are detected or first run
+    run_record = await save_model_calibration_run(
+        db=db,
+        sample_runs_count=total_samples,
+        overall_hit_rate_t30=target_hit_rate,
+        avg_alpha_vs_spy_t30=target_avg_alpha,
+        max_drawdown=target_max_dd,
+        archetype_scorecard=archetype_scorecard,
+        active_weights=active_weights,
+        recommended_weights=recommended_weights,
+        is_applied=0,
+        scorecard_data=scorecard_payload,
+    )
+
+    scorecard_payload["id"] = run_record.id
+    scorecard_payload["date"] = run_record.date.isoformat() if run_record.date else datetime.now(timezone.utc).isoformat()
+    scorecard_payload["message"] = "Model calibration successfully executed and saved."
+    run_record.scorecard_data = scorecard_payload
+    await db.commit()
+
+    return scorecard_payload
 
