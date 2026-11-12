@@ -20,6 +20,7 @@ interface PortfolioSummary {
   total_unrealized_pnl: number;
   open_positions_count: number;
   max_positions: number;
+  allocation_per_trade: number;
   closed_trades_count: number;
   win_rate_pct: number;
   excess_alpha_pct: number;
@@ -33,6 +34,10 @@ export default function PortfolioPage() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [bannerMessage, setBannerMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [showManagePanel, setShowManagePanel] = useState(false);
+  const [slotsInput, setSlotsInput] = useState<number>(10);
+  const [allocInput, setAllocInput] = useState<number>(10000);
+  const [depositInput, setDepositInput] = useState<string>("25000");
 
   const fetchPortfolioData = async () => {
     try {
@@ -43,7 +48,12 @@ export default function PortfolioPage() {
         fetch(`${API_BASE}/api/portfolio/journal?limit=200`),
       ]);
 
-      if (sumRes.ok) setSummary(await sumRes.json());
+      if (sumRes.ok) {
+        const sumData: PortfolioSummary = await sumRes.json();
+        setSummary(sumData);
+        setSlotsInput(sumData.max_positions);
+        setAllocInput(sumData.allocation_per_trade ?? 10000);
+      }
       if (posRes.ok) setPositions(await posRes.json());
       if (snapRes.ok) setSnapshots(await snapRes.json());
       if (jourRes.ok) setJournal(await jourRes.json());
@@ -132,6 +142,60 @@ export default function PortfolioPage() {
     }
   };
 
+  const handleSaveSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setActionLoading("settings");
+    try {
+      const res = await fetch(`${API_BASE}/api/portfolio/settings`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          max_positions: slotsInput,
+          allocation_per_trade: allocInput,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Failed to update settings");
+      setBannerMessage({
+        type: "success",
+        text: `Updated fund capacity to ${data.summary.max_positions} slots at $${data.summary.allocation_per_trade.toLocaleString()} per trade.`,
+      });
+      await fetchPortfolioData();
+    } catch (err: any) {
+      setBannerMessage({ type: "error", text: err.message || "Failed to update portfolio settings" });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleDepositCash = async (amountToDeposit?: number) => {
+    const amount = amountToDeposit ?? Number(depositInput);
+    if (!amount || amount <= 0) {
+      setBannerMessage({ type: "error", text: "Enter a positive cash top-up amount." });
+      return;
+    }
+    setActionLoading("deposit");
+    try {
+      const res = await fetch(`${API_BASE}/api/portfolio/deposit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Failed to top up cash");
+      setBannerMessage({
+        type: "success",
+        text: `Topped up +$${data.deposited_amount.toLocaleString()} cash. Available cash: $${data.summary.cash_balance.toLocaleString()}.`,
+      });
+      setDepositInput("");
+      await fetchPortfolioData();
+    } catch (err: any) {
+      setBannerMessage({ type: "error", text: err.message || "Failed to top up cash" });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
       <Navbar />
@@ -177,8 +241,126 @@ export default function PortfolioPage() {
               <span>⚡</span>
               <span>{actionLoading === "backfill" ? "Bootstrapping..." : "Bootstrap History"}</span>
             </button>
+            <button
+              onClick={() => setShowManagePanel((v) => !v)}
+              className={`px-3.5 py-2 text-xs font-semibold rounded-xl border transition-all flex items-center gap-2 ${
+                showManagePanel
+                  ? "bg-emerald-600/20 border-emerald-500/40 text-emerald-300"
+                  : "bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700"
+              }`}
+            >
+              <span>⚙️</span>
+              <span>Slots & Cash</span>
+            </button>
           </div>
         </div>
+
+        {/* Collapsible Fund Controls: Slots, Allocation & Cash Top-Up */}
+        {showManagePanel && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 bg-slate-900/70 border border-slate-800 rounded-2xl p-5">
+            <form onSubmit={handleSaveSettings} className="flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-bold text-slate-100">Slot Capacity & Trade Sizing</h2>
+                <span className="text-[11px] text-slate-400">Applies to new Market Open fills</span>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="flex flex-col gap-1 text-xs text-slate-400">
+                  <span>Max Slots (1–50)</span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setSlotsInput((s) => Math.max(1, s - 1))}
+                      className="px-2.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold"
+                    >
+                      −
+                    </button>
+                    <input
+                      type="number"
+                      min={1}
+                      max={50}
+                      value={slotsInput}
+                      onChange={(e) => setSlotsInput(Math.max(1, Math.min(50, Number(e.target.value) || 1)))}
+                      className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 focus:border-indigo-500 focus:outline-none text-slate-100 font-mono text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setSlotsInput((s) => Math.min(50, s + 1))}
+                      className="px-2.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold"
+                    >
+                      +
+                    </button>
+                  </div>
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-slate-400">
+                  <span>Allocation / Trade ($)</span>
+                  <input
+                    type="number"
+                    min={500}
+                    step={500}
+                    value={allocInput}
+                    onChange={(e) => setAllocInput(Number(e.target.value) || 500)}
+                    className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 focus:border-indigo-500 focus:outline-none text-slate-100 font-mono [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  />
+                </label>
+              </div>
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  disabled={actionLoading !== null}
+                  className="px-4 py-2 text-xs font-semibold rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 transition-all"
+                >
+                  {actionLoading === "settings" ? "Saving..." : "Save Slots & Sizing"}
+                </button>
+              </div>
+            </form>
+
+            <div className="flex flex-col gap-3 lg:border-l lg:border-slate-800 lg:pl-5">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-bold text-slate-100">Top Up Cash</h2>
+                <span className="text-[11px] text-slate-400">Adjusts cost basis to keep Alpha % honest</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {[10000, 25000, 50000].map((preset) => {
+                  const isSelected = Number(depositInput) === preset;
+                  return (
+                    <button
+                      key={preset}
+                      type="button"
+                      disabled={actionLoading !== null}
+                      onClick={() => setDepositInput(String(preset))}
+                      className={`px-3 py-2 text-xs font-semibold rounded-lg border disabled:opacity-50 transition-all ${
+                        isSelected
+                          ? "bg-emerald-500/25 border-emerald-400 text-emerald-200"
+                          : "bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
+                      }`}
+                    >
+                      +${(preset / 1000).toFixed(0)}k
+                    </button>
+                  );
+                })}
+                <div className="flex items-center gap-2 flex-1 min-w-[180px]">
+                  <input
+                    type="number"
+                    min={100}
+                    step={1000}
+                    value={depositInput}
+                    onChange={(e) => setDepositInput(e.target.value)}
+                    placeholder="Custom $"
+                    className="w-full px-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-700 focus:border-emerald-500 focus:outline-none text-slate-100 font-mono [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  />
+                  <button
+                    type="button"
+                    disabled={actionLoading !== null}
+                    onClick={() => handleDepositCash()}
+                    className="px-4 py-2 text-xs font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50 shrink-0 transition-all"
+                  >
+                    {actionLoading === "deposit" ? "Adding..." : "Top Up"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Feedback Banner */}
         {bannerMessage && (
@@ -277,7 +459,7 @@ export default function PortfolioPage() {
                   {summary.open_positions_count} <span className="text-slate-500 text-sm font-normal">/ {summary.max_positions}</span>
                 </span>
                 <div className="text-xs text-slate-400 mt-1">
-                  {summary.closed_trades_count} total closed trades
+                  ${(summary.allocation_per_trade ?? 10000).toLocaleString()}/trade &bull; {summary.closed_trades_count} closed
                 </div>
               </div>
             </div>
@@ -290,6 +472,7 @@ export default function PortfolioPage() {
         {/* Section 2: Active Holdings Table */}
         <ActivePositionsTable
           positions={positions}
+          maxPositions={summary?.max_positions ?? 10}
           onClosePosition={handleManualClose}
         />
 

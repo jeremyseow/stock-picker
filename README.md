@@ -301,6 +301,8 @@ stock-picker/
 | | `/api/portfolio/backfill` | POST | Replay historical paper trading over existing synthesis reports |
 | | `/api/portfolio/trigger-open` | POST | On-demand trigger for US Market Open order fills |
 | | `/api/portfolio/trigger-close` | POST | On-demand trigger for US Market Close exit evaluation & mark-to-market |
+| | `/api/portfolio/settings` | PATCH | Update configurable `max_positions` (slots) and `allocation_per_trade` |
+| | `/api/portfolio/deposit` | POST | Top up portfolio cash while incrementing `initial_balance` to preserve honest return % |
 | **Scheduler & Health** | `/health` | GET | Health check status |
 | | `/api/scheduler/status` | GET | Live background scheduler status, registered jobs, and next run times |
 

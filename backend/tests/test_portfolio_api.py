@@ -156,3 +156,36 @@ async def test_portfolio_snapshots_api(client: AsyncClient, test_db: AsyncSessio
     assert data[0]["total_equity"] == 101000.0
     assert data[0]["excess_alpha_pct"] == 0.5
 
+
+@pytest.mark.asyncio
+async def test_portfolio_settings_and_deposit_api(client: AsyncClient, test_db: AsyncSession):
+    """Verify PATCH /api/portfolio/settings and POST /api/portfolio/deposit preserve honest returns."""
+    # 1. Update max_positions (10 -> 15) and allocation_per_trade ($10k -> $5k)
+    res_cfg = await client.patch(
+        "/api/portfolio/settings",
+        json={"max_positions": 15, "allocation_per_trade": 5000.0},
+    )
+    assert res_cfg.status_code == 200
+    summary = res_cfg.json()["summary"]
+    assert summary["max_positions"] == 15
+    assert summary["allocation_per_trade"] == 5000.0
+
+    # Invalid slot count rejected
+    res_bad = await client.patch("/api/portfolio/settings", json={"max_positions": 0})
+    assert res_bad.status_code == 400
+
+    # 2. Top up cash (+$50,000) -> increases cash_balance AND initial_balance equally (return remains 0%)
+    res_dep = await client.post("/api/portfolio/deposit", json={"amount": 50000})
+    assert res_dep.status_code == 200
+    dep_sum = res_dep.json()["summary"]
+    assert dep_sum["cash_balance"] == 150000.0
+    assert dep_sum["initial_balance"] == 150000.0
+    assert dep_sum["total_equity"] == 150000.0
+    assert dep_sum["total_return_dollar"] == 0.0
+    assert dep_sum["total_return_pct"] == 0.0
+
+    # Invalid deposit rejected
+    res_bad_dep = await client.post("/api/portfolio/deposit", json={"amount": -100})
+    assert res_bad_dep.status_code == 400
+
+

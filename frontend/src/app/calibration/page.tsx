@@ -174,6 +174,11 @@ export default function CalibrationPage() {
   const t5 = meta?.t5_metrics;
   const t15 = meta?.t15_metrics;
   const t30 = meta?.t30_metrics;
+  const elapsedDays = meta?.trading_days_elapsed ?? 0;
+  const t15Progress = t15?.progress_days ?? Math.min(elapsedDays, 15);
+  const t30Progress = t30?.progress_days ?? Math.min(elapsedDays, 30);
+  const t15Remaining = Math.max(0, 15 - t15Progress);
+  const t30Remaining = Math.max(0, 30 - t30Progress);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
@@ -247,7 +252,7 @@ export default function CalibrationPage() {
                     <div className="text-lg font-bold text-white mt-0.5">
                       First Report: <span className="text-indigo-400 font-mono">{meta?.inception_date || "2026-11-01"}</span>
                       <span className="text-slate-500 mx-2">•</span>
-                      <span className="text-slate-300">{meta?.trading_days_elapsed ?? 5} Trading Days Elapsed</span>
+                      <span className="text-slate-300">{elapsedDays} Trading Days Elapsed</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -300,31 +305,67 @@ export default function CalibrationPage() {
                       <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
                         T+15 Intermediate Swing
                       </span>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                        ⏳ Maturing ({meta?.trading_days_elapsed ?? 5}/15 Days)
-                      </span>
-                    </div>
-
-                    <div className="space-y-1.5 pt-1">
-                      <div className="flex justify-between text-xs font-semibold">
-                        <span className="text-slate-300">Cohort Progress</span>
-                        <span className="text-amber-400 font-mono">
-                          {Math.round(((meta?.trading_days_elapsed ?? 5) / 15) * 100)}%
+                      {t15?.is_matured ? (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          🟢 Active ({t15.matured_count} Matured)
                         </span>
-                      </div>
-                      <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
-                        <div
-                          className="h-full bg-amber-400 rounded-full transition-all duration-500"
-                          style={{
-                            width: `${Math.min(100, Math.round(((meta?.trading_days_elapsed ?? 5) / 15) * 100))}%`,
-                          }}
-                        />
-                      </div>
+                      ) : (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                          ⏳ Maturing ({t15Progress}/15 Days)
+                        </span>
+                      )}
                     </div>
 
-                    <div className="pt-2 border-t border-slate-800/60 text-[11px] text-slate-400">
-                      Unlocks after 10 more trading sessions (~Nov 21, 2026).
-                    </div>
+                    {t15?.is_matured ? (
+                      <>
+                        <div className="flex items-baseline justify-between pt-1">
+                          <div>
+                            <div className="text-2xl font-extrabold text-emerald-400 font-mono">
+                              {t15.hit_rate !== null && t15.hit_rate !== undefined ? `${t15.hit_rate}%` : "—"}
+                            </div>
+                            <div className="text-[11px] text-slate-400">Hit Rate vs SPY</div>
+                          </div>
+                          <div className="text-right">
+                            <div className={`text-xl font-bold font-mono ${Number(t15.avg_alpha) >= 0 ? "text-indigo-400" : "text-amber-400"}`}>
+                              {t15.avg_alpha !== null && t15.avg_alpha !== undefined
+                                ? Number(t15.avg_alpha) >= 0
+                                  ? `+${t15.avg_alpha}%`
+                                  : `${t15.avg_alpha}%`
+                                : "—"}
+                            </div>
+                            <div className="text-[11px] text-slate-400">Avg Excess Alpha</div>
+                          </div>
+                        </div>
+                        <div className="pt-2 border-t border-slate-800/60 text-[11px] text-slate-400">
+                          Swing continuation window. {t15.matured_count} picks completed 15 market sessions.
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="space-y-1.5 pt-1">
+                          <div className="flex justify-between text-xs font-semibold">
+                            <span className="text-slate-300">Cohort Progress</span>
+                            <span className="text-amber-400 font-mono">
+                              {Math.round((t15Progress / 15) * 100)}%
+                            </span>
+                          </div>
+                          <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
+                            <div
+                              className="h-full bg-amber-400 rounded-full transition-all duration-500"
+                              style={{
+                                width: `${Math.min(100, Math.round((t15Progress / 15) * 100))}%`,
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="pt-2 border-t border-slate-800/60 text-[11px] text-slate-400">
+                          {t15Remaining > 0
+                            ? `Unlocks after ${t15Remaining} more trading ${t15Remaining === 1 ? "session" : "sessions"}.`
+                            : `Waiting for 5 matured picks (${t15?.matured_count ?? 0}/5).`}
+                        </div>
+                      </>
+                    )}
                   </div>
 
                   {/* T+30 Horizon */}
@@ -333,31 +374,67 @@ export default function CalibrationPage() {
                       <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
                         T+30 Statistical Alpha
                       </span>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                        ⏳ Maturing ({meta?.trading_days_elapsed ?? 5}/30 Days)
-                      </span>
-                    </div>
-
-                    <div className="space-y-1.5 pt-1">
-                      <div className="flex justify-between text-xs font-semibold">
-                        <span className="text-slate-300">Cohort Progress</span>
-                        <span className="text-indigo-400 font-mono">
-                          {Math.round(((meta?.trading_days_elapsed ?? 5) / 30) * 100)}%
+                      {t30?.is_matured ? (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          🟢 Active ({t30.matured_count} Matured)
                         </span>
-                      </div>
-                      <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
-                        <div
-                          className="h-full bg-indigo-500 rounded-full transition-all duration-500"
-                          style={{
-                            width: `${Math.min(100, Math.round(((meta?.trading_days_elapsed ?? 5) / 30) * 100))}%`,
-                          }}
-                        />
-                      </div>
+                      ) : (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                          ⏳ Maturing ({t30Progress}/30 Days)
+                        </span>
+                      )}
                     </div>
 
-                    <div className="pt-2 border-t border-slate-800/60 text-[11px] text-slate-400">
-                      Full multi-week alpha benchmark. Unlocks ~Dec 12, 2026.
-                    </div>
+                    {t30?.is_matured ? (
+                      <>
+                        <div className="flex items-baseline justify-between pt-1">
+                          <div>
+                            <div className="text-2xl font-extrabold text-emerald-400 font-mono">
+                              {t30.hit_rate !== null && t30.hit_rate !== undefined ? `${t30.hit_rate}%` : "—"}
+                            </div>
+                            <div className="text-[11px] text-slate-400">Hit Rate vs SPY</div>
+                          </div>
+                          <div className="text-right">
+                            <div className={`text-xl font-bold font-mono ${Number(t30.avg_alpha) >= 0 ? "text-indigo-400" : "text-amber-400"}`}>
+                              {t30.avg_alpha !== null && t30.avg_alpha !== undefined
+                                ? Number(t30.avg_alpha) >= 0
+                                  ? `+${t30.avg_alpha}%`
+                                  : `${t30.avg_alpha}%`
+                                : "—"}
+                            </div>
+                            <div className="text-[11px] text-slate-400">Avg Excess Alpha</div>
+                          </div>
+                        </div>
+                        <div className="pt-2 border-t border-slate-800/60 text-[11px] text-slate-400">
+                          Full multi-week alpha benchmark. {t30.matured_count} picks completed 30 market sessions.
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="space-y-1.5 pt-1">
+                          <div className="flex justify-between text-xs font-semibold">
+                            <span className="text-slate-300">Cohort Progress</span>
+                            <span className="text-indigo-400 font-mono">
+                              {Math.round((t30Progress / 30) * 100)}%
+                            </span>
+                          </div>
+                          <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
+                            <div
+                              className="h-full bg-indigo-500 rounded-full transition-all duration-500"
+                              style={{
+                                width: `${Math.min(100, Math.round((t30Progress / 30) * 100))}%`,
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="pt-2 border-t border-slate-800/60 text-[11px] text-slate-400">
+                          {t30Remaining > 0
+                            ? `Full multi-week alpha benchmark. Unlocks after ${t30Remaining} more trading ${t30Remaining === 1 ? "session" : "sessions"}.`
+                            : `Waiting for 5 matured picks (${t30?.matured_count ?? 0}/5).`}
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>

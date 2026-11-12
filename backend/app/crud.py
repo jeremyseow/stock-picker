@@ -1318,12 +1318,21 @@ async def update_portfolio_account(
     account: PortfolioAccount,
     cash_balance: float | None = None,
     total_equity: float | None = None,
+    initial_balance: float | None = None,
+    max_positions: int | None = None,
+    allocation_per_trade: float | None = None,
 ) -> PortfolioAccount:
-    """Update portfolio account cash balance and total equity."""
+    """Update portfolio account balances, slot capacity, and trade sizing."""
     if cash_balance is not None:
         account.cash_balance = round(cash_balance, 2)
     if total_equity is not None:
         account.total_equity = round(total_equity, 2)
+    if initial_balance is not None:
+        account.initial_balance = round(initial_balance, 2)
+    if max_positions is not None:
+        account.max_positions = int(max_positions)
+    if allocation_per_trade is not None:
+        account.allocation_per_trade = round(allocation_per_trade, 2)
     account.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(account)

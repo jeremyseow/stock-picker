@@ -118,8 +118,8 @@ async def run_walk_forward_backtest(db: AsyncSession) -> Dict[str, Any]:
     """
     logger.info("Starting Walk-Forward Historical Backtest Evaluation...")
 
-    # 1. Fetch historical synthesis records
-    synth_query = select(SynthesisReport).order_by(desc(SynthesisReport.date)).limit(100)
+    # 1. Fetch all historical synthesis records (avoid .limit(100) which drops oldest matured cohorts)
+    synth_query = select(SynthesisReport).order_by(desc(SynthesisReport.date))
     synth_rows = list((await db.execute(synth_query)).scalars().all())
 
     active_weights = get_active_weights()

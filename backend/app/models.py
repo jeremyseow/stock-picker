@@ -616,6 +616,8 @@ class PortfolioAccount(Base):
     initial_balance = Column(Float, default=100000.0)
     cash_balance = Column(Float, default=100000.0)
     total_equity = Column(Float, default=100000.0)
+    max_positions = Column(Integer, default=10)
+    allocation_per_trade = Column(Float, default=10000.0)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 

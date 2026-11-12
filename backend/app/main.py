@@ -48,6 +48,8 @@ from app.portfolio_engine import (
     execute_market_open_orders,
     evaluate_market_close_exits,
     bootstrap_portfolio_history,
+    update_portfolio_settings,
+    deposit_portfolio_cash,
 )
 from app.options_pipeline import run_options_pipeline
 from app.backtest_engine import run_walk_forward_backtest
@@ -1173,6 +1175,33 @@ async def trigger_market_close_job(db: AsyncSession = Depends(get_db)):
     """Manual on-demand execution of US Market Close exit evaluation & mark-to-market."""
     result = await evaluate_market_close_exits(db)
     return result
+
+
+@app.patch("/api/portfolio/settings")
+async def patch_portfolio_settings(payload: dict, db: AsyncSession = Depends(get_db)):
+    """Update configurable portfolio max_positions (slots) and allocation_per_trade."""
+    try:
+        summary = await update_portfolio_settings(
+            db,
+            max_positions=payload.get("max_positions"),
+            allocation_per_trade=payload.get("allocation_per_trade"),
+        )
+        return {"status": "success", "summary": summary}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/portfolio/deposit")
+async def post_portfolio_deposit(payload: dict, db: AsyncSession = Depends(get_db)):
+    """Top up portfolio cash while incrementing initial_balance to preserve honest return %."""
+    amount = payload.get("amount")
+    if amount is None:
+        raise HTTPException(status_code=400, detail="amount is required")
+    try:
+        summary = await deposit_portfolio_cash(db, float(amount))
+        return {"status": "success", "deposited_amount": round(float(amount), 2), "summary": summary}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 

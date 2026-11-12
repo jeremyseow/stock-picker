@@ -23,11 +23,13 @@ export interface OpenPositionItem {
 
 interface ActivePositionsTableProps {
   positions: OpenPositionItem[];
+  maxPositions?: number;
   onClosePosition: (positionId: number) => Promise<void>;
 }
 
 export default function ActivePositionsTable({
   positions,
+  maxPositions = 10,
   onClosePosition,
 }: ActivePositionsTableProps) {
   const [closingId, setClosingId] = useState<number | null>(null);
@@ -86,7 +88,7 @@ export default function ActivePositionsTable({
         <div className="flex items-center gap-3">
           <h2 className="text-base font-bold text-slate-100">Active Portfolio Holdings</h2>
           <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-xs font-semibold">
-            {positions.length} / 10 Slots Active
+            {positions.length} / {maxPositions} Slots Active
           </span>
         </div>
       </div>

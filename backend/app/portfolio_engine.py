@@ -240,13 +240,15 @@ async def execute_market_open_orders(
     """
     account = await get_or_create_portfolio_account(db)
     open_positions = await get_open_positions(db, account.id)
+    max_positions = account.max_positions or MAX_CONCURRENT_POSITIONS
+    allocation = account.allocation_per_trade or POSITION_ALLOCATION
 
-    available_slots = MAX_CONCURRENT_POSITIONS - len(open_positions)
+    available_slots = max(0, max_positions - len(open_positions))
     if available_slots <= 0:
-        logger.info(f"Market open execution: Portfolio at max capacity ({len(open_positions)}/10 slots). Skipping.")
+        logger.info(f"Market open execution: Portfolio at max capacity ({len(open_positions)}/{max_positions} slots). Skipping.")
         return {
             "status": "full",
-            "message": "Max concurrent positions reached (10/10)",
+            "message": f"Max concurrent positions reached ({len(open_positions)}/{max_positions})",
             "executed": [],
             "skipped": [],
         }
@@ -278,7 +280,7 @@ async def execute_market_open_orders(
             skipped.append({"ticker": candidate["ticker"], "reason": "capacity_full"})
             continue
 
-        if account.cash_balance < POSITION_ALLOCATION:
+        if account.cash_balance < allocation:
             skipped.append({"ticker": candidate["ticker"], "reason": "insufficient_cash"})
             continue
 
@@ -293,7 +295,7 @@ async def execute_market_open_orders(
             skipped.append({"ticker": sym, "reason": "price_unavailable"})
             continue
 
-        shares = int(POSITION_ALLOCATION // open_price)
+        shares = int(allocation // open_price)
         if shares <= 0:
             skipped.append({"ticker": sym, "reason": "share_allocation_zero"})
             continue
@@ -604,11 +606,55 @@ async def get_portfolio_summary_metrics(db: AsyncSession) -> Dict[str, Any]:
         "total_realized_pnl": total_realized_pnl,
         "total_unrealized_pnl": total_unrealized_pnl,
         "open_positions_count": len(open_positions),
-        "max_positions": MAX_CONCURRENT_POSITIONS,
+        "max_positions": account.max_positions or MAX_CONCURRENT_POSITIONS,
+        "allocation_per_trade": account.allocation_per_trade or POSITION_ALLOCATION,
         "closed_trades_count": total_closed,
         "win_rate_pct": win_rate,
         "excess_alpha_pct": excess_alpha_pct,
     }
+
+
+async def update_portfolio_settings(
+    db: AsyncSession,
+    max_positions: Optional[int] = None,
+    allocation_per_trade: Optional[float] = None,
+) -> Dict[str, Any]:
+    """Update configurable portfolio slot capacity and per-trade allocation."""
+    account = await get_or_create_portfolio_account(db)
+    updates: Dict[str, Any] = {}
+
+    if max_positions is not None:
+        if not (1 <= int(max_positions) <= 50):
+            raise ValueError("max_positions must be between 1 and 50")
+        updates["max_positions"] = int(max_positions)
+
+    if allocation_per_trade is not None:
+        alloc = float(allocation_per_trade)
+        if not (500.0 <= alloc <= 1_000_000.0):
+            raise ValueError("allocation_per_trade must be between $500 and $1,000,000")
+        updates["allocation_per_trade"] = round(alloc, 2)
+
+    if updates:
+        await update_portfolio_account(db, account, **updates)
+
+    return await get_portfolio_summary_metrics(db)
+
+
+async def deposit_portfolio_cash(db: AsyncSession, amount: float) -> Dict[str, Any]:
+    """Top up portfolio cash while incrementing initial_balance so return % and SPY alpha stay accurate."""
+    deposit = round(float(amount), 2)
+    if deposit <= 0 or deposit > 10_000_000.0:
+        raise ValueError("Deposit amount must be greater than $0 and at most $10,000,000")
+
+    account = await get_or_create_portfolio_account(db)
+    await update_portfolio_account(
+        db,
+        account,
+        cash_balance=round(account.cash_balance + deposit, 2),
+        initial_balance=round(account.initial_balance + deposit, 2),
+        total_equity=round(account.total_equity + deposit, 2),
+    )
+    return await get_portfolio_summary_metrics(db)
 
 
 async def bootstrap_portfolio_history(
