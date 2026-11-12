@@ -1,11 +1,11 @@
 import re
 import logging
 from typing import List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timedelta
 import httpx
 from bs4 import BeautifulSoup
 from ddgs import DDGS
-from app.market_researcher import is_valid_ticker
+from app.market_researcher import is_valid_ticker, fetch_insider_data
 
 logger = logging.getLogger(__name__)
 
@@ -102,16 +102,161 @@ async def fetch_recent_insider_purchases(limit: int = 50) -> List[Dict[str, Any]
     return trades
 
 
+CAPITOLTRADES_BUY_URL = "https://www.capitoltrades.com/trades?txType=buy&page={page}"
+
+
+def _normalize_capitol_amount(raw_amt: str) -> str:
+    """Normalizes CapitolTrades shorthand ranges (e.g. '15K–50K') into STOCK Act brackets."""
+    clean = re.sub(r"[^\w]", "", (raw_amt or "").upper())
+    mapping = {
+        "1K15K": "$1,001 - $15,000",
+        "15K50K": "$15,001 - $50,000",
+        "50K100K": "$50,001 - $100,000",
+        "100K250K": "$100,001 - $250,000",
+        "250K500K": "$250,001 - $500,000",
+        "500K1M": "$500,001 - $1,000,000",
+        "1M5M": "$1,000,001 - $5,000,000",
+        "5M25M": "$5,000,001 - $25,000,000",
+        "25M50M": "$25,000,001 - $50,000,000",
+    }
+    if clean in mapping:
+        return mapping[clean]
+    if raw_amt:
+        return re.sub(r"[\u2013\u2014\ufffd]+", " - ", raw_amt.strip())
+    return "$15,001 - $50,000"
+
+
+def _parse_capitol_date(raw_date: str) -> str:
+    """Parses CapitolTrades date strings ('14:01 | Today', '20 Oct | 2026') to YYYY-MM-DD."""
+    text = (raw_date or "").strip()
+    if "Today" in text:
+        return datetime.now().strftime("%Y-%m-%d")
+    if "Yesterday" in text:
+        return (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+
+    cleaned = re.sub(r"\s*\|\s*", " ", text).strip()
+    m = re.search(r"(\d{1,2}\s+[A-Za-z]{3}\s+\d{4})", cleaned)
+    if m:
+        try:
+            return datetime.strptime(m.group(1), "%d %b %Y").strftime("%Y-%m-%d")
+        except ValueError:
+            pass
+    return datetime.now().strftime("%Y-%m-%d")
+
+
+async def _fetch_capitoltrades_html(limit: int = 25, max_pages: int = 3) -> List[Dict[str, Any]]:
+    """Scrapes live STOCK Act purchase filings directly from CapitolTrades SSR HTML."""
+    trades: List[Dict[str, Any]] = []
+    seen = set()
+    valid_cache: Dict[str, bool] = {}
+    headers = {"User-Agent": DEFAULT_USER_AGENT}
+
+    async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+        for page in range(1, max_pages + 1):
+            if len(trades) >= limit:
+                break
+            url = CAPITOLTRADES_BUY_URL.format(page=page)
+            res = await client.get(url, headers=headers)
+            if res.status_code != 200:
+                logger.warning(f"CapitolTrades returned HTTP {res.status_code} on page {page}")
+                break
+
+            soup = BeautifulSoup(res.text, "html.parser")
+            rows = soup.select("table tbody tr")
+            if not rows:
+                break
+
+            for row in rows:
+                cols = row.find_all("td")
+                if len(cols) < 10:
+                    continue
+
+                # Col 0: Politician | Party | Chamber | State
+                pol_parts = [p.strip() for p in cols[0].get_text(" | ", strip=True).split("|")]
+                politician = pol_parts[0] if pol_parts else "Congressional Member"
+                party = pol_parts[1] if len(pol_parts) > 1 else None
+                chamber = pol_parts[2] if len(pol_parts) > 2 else None
+
+                # Col 1: Issuer Name | TICKER:US
+                issuer_parts = [p.strip() for p in cols[1].get_text(" | ", strip=True).split("|")]
+                company = issuer_parts[0] if issuer_parts else ""
+                raw_sym = issuer_parts[1] if len(issuer_parts) > 1 else ""
+                if not raw_sym.endswith(":US"):
+                    continue
+                ticker = raw_sym.split(":")[0].upper().strip()
+                if not ticker or not re.match(r"^[A-Z]{1,5}$", ticker):
+                    continue
+                if ticker in ["USD", "ETF", "SPY", "QQQ"]:
+                    continue
+
+                tx_type = cols[6].get_text(strip=True).upper()
+                if tx_type != "BUY":
+                    continue
+
+                if ticker not in valid_cache:
+                    valid_cache[ticker] = is_valid_ticker(ticker)
+                if not valid_cache[ticker]:
+                    continue
+
+                filing_date = _parse_capitol_date(cols[2].get_text(" | ", strip=True))
+                trade_date = _parse_capitol_date(cols[3].get_text(" | ", strip=True))
+                amount_range = _normalize_capitol_amount(cols[7].get_text(strip=True))
+                price_txt = cols[8].get_text(strip=True)
+
+                detail_link = cols[9].find("a")
+                href = detail_link.get("href") if detail_link else ""
+                source_url = f"https://www.capitoltrades.com{href}" if href and href.startswith("/") else "https://www.capitoltrades.com/trades"
+
+                dedup_key = (ticker, politician, trade_date)
+                if dedup_key in seen:
+                    continue
+                seen.add(dedup_key)
+
+                meta_desc = ", ".join(x for x in [party, chamber] if x)
+                pol_label = f"{politician} ({meta_desc})" if meta_desc else politician
+                snippet = f"{pol_label} disclosed purchase of {amount_range} in {company} ({ticker}) traded {trade_date}, filed {filing_date}."
+
+                trades.append({
+                    "ticker": ticker,
+                    "politician": politician,
+                    "party": party,
+                    "chamber": chamber,
+                    "transaction_type": "BUY",
+                    "amount_range": amount_range,
+                    "price": price_txt if price_txt and price_txt != "N/A" else None,
+                    "trade_date": trade_date,
+                    "filing_date": filing_date,
+                    "source_url": source_url,
+                    "snippet": snippet,
+                })
+                if len(trades) >= limit:
+                    break
+
+    return trades
+
+
 async def fetch_recent_congressional_purchases(limit: int = 25) -> List[Dict[str, Any]]:
     """
-    Discovers recent Congressional STOCK Act purchases across House and Senate members
-    using targeted search aggregations.
+    Discovers recent Congressional STOCK Act purchases across House and Senate members.
+    Uses live CapitolTrades SSR filings table as primary source, with DDGS web search fallback.
     """
     trades: List[Dict[str, Any]] = []
+
+    # Primary: Live CapitolTrades HTML table
+    try:
+        trades = await _fetch_capitoltrades_html(limit=limit)
+        if trades:
+            logger.info(f"Ingested {len(trades)} live Congressional STOCK Act trades from CapitolTrades.")
+            return trades
+    except Exception as e:
+        logger.warning(f"CapitolTrades live scrape failed ({e}), falling back to DDGS search.")
+
+    # Fallback: DDGS targeted search with broadened ticker regex
     queries = [
-        "congressional stock trades purchase disclosure periodic transaction report filed 2026",
         "site:capitoltrades.com/trades purchase disclosure 2026",
+        "congressional stock trades purchase disclosure periodic transaction report filed 2026",
     ]
+    seen_fallback = set()
 
     try:
         ddgs = DDGS()
@@ -121,28 +266,39 @@ async def fetch_recent_congressional_purchases(limit: int = 25) -> List[Dict[str
                 for r in results:
                     title = r.get("title", "")
                     body = r.get("body", "")
+                    href = r.get("href", "")
                     text = f"{title} {body}"
 
-                    # Regex match tickers like $NVDA or (NASDAQ: NVDA) or "bought NVDA"
-                    ticker_matches = re.findall(r"\$([A-Z]{1,5})\b|\b([A-Z]{2,5})\s+stock\b", text)
-                    found_tickers = [m[0] or m[1] for m in ticker_matches if m[0] or m[1]]
+                    # Match $NVDA, (MCD:US), (NVDA), or "NVDA stock"
+                    ticker_matches = re.findall(
+                        r"\$([A-Z]{1,5})\b|\(([A-Z]{1,5}):US\)|\(([A-Z]{1,5})\)|\b([A-Z]{2,5})\s+stock\b",
+                        text,
+                    )
+                    found_tickers = [next((g for g in m if g), None) for m in ticker_matches]
+                    found_tickers = [t for t in found_tickers if t]
 
                     for t in found_tickers:
                         t = t.upper()
-                        if is_valid_ticker(t) and t not in ["USD", "ETF", "SPY", "QQQ"]:
-                            # Estimate dollar range from text if present
+                        if t in ["USD", "ETF", "SPY", "QQQ", "US"]:
+                            continue
+                        if is_valid_ticker(t):
                             amount_match = re.search(r"(\$\d+k?\s*[-–]\s*\$?\d+k?|\$\d+[\d,]+)", text, re.I)
                             amount_str = amount_match.group(1) if amount_match else "$15,001 - $50,000"
 
-                            # Detect politician name
                             politician_match = re.search(r"(Rep\.|Senator|Sen\.)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)", text)
                             pol_name = politician_match.group(0) if politician_match else "Congressional Member"
+
+                            dedup_key = (t, pol_name, title[:40])
+                            if dedup_key in seen_fallback:
+                                continue
+                            seen_fallback.add(dedup_key)
 
                             trades.append({
                                 "ticker": t,
                                 "politician": pol_name,
+                                "transaction_type": "BUY",
                                 "amount_range": amount_str,
-                                "source_title": title,
+                                "source_url": href or title,
                                 "snippet": body[:200],
                                 "trade_date": datetime.now().strftime("%Y-%m-%d"),
                             })
@@ -153,11 +309,47 @@ async def fetch_recent_congressional_purchases(limit: int = 25) -> List[Dict[str
             except Exception as e:
                 logger.warning(f"Congressional query '{q}' encountered: {e}")
 
-        logger.info(f"Ingested {len(trades)} candidate Congressional trades.")
+        logger.info(f"Ingested {len(trades)} candidate Congressional trades via fallback.")
     except Exception as e:
         logger.error(f"Error fetching Congressional purchases: {e}")
 
     return trades
+
+
+def fetch_form4_flows_for_tickers(tickers: List[str], limit_per_ticker: int = 8) -> List[Dict[str, Any]]:
+    """
+    Engine 2 Form 4 ingestion for both purchases and executive liquidations (SELLs)
+    across monitored tickers (including Engine 1 hyped stocks for Retail Trap detection).
+    """
+    rows: List[Dict[str, Any]] = []
+    seen = set()
+    for sym in tickers:
+        clean_sym = (sym or "").strip().upper()
+        if not clean_sym or clean_sym in seen:
+            continue
+        seen.add(clean_sym)
+        try:
+            ins_data = fetch_insider_data(clean_sym, limit=limit_per_ticker)
+            if not ins_data or not ins_data.get("has_data"):
+                continue
+            for tx in ins_data.get("recent_transactions", []):
+                tx_type = str(tx.get("type") or "OTHER").upper()
+                rows.append({
+                    "ticker": clean_sym,
+                    "filing_date": tx.get("date") or "",
+                    "trade_date": tx.get("date") or "",
+                    "insider_name": tx.get("insider") or "Executive",
+                    "position": tx.get("position") or "Insider",
+                    "transaction_type": tx_type,
+                    "shares": float(tx.get("shares") or 0.0),
+                    "price": str(tx.get("price") or ""),
+                    "total_value": float(tx.get("value") or 0.0),
+                    "ownership": str(tx.get("ownership") or ""),
+                    "company_name": tx.get("details") or tx.get("text") or "SEC Form 4",
+                })
+        except Exception as e:
+            logger.warning(f"Failed Form 4 flow fetch for ${clean_sym}: {e}")
+    return rows
 
 
 async def ingest_all_smart_money() -> Dict[str, Any]:

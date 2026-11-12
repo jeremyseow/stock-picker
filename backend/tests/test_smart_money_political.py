@@ -104,7 +104,6 @@ async def test_synthesis_archetype_classification():
         ticker="AAPL",
         date=now,
         community_sentiment="85% Bullish",
-        smart_money_verdict="Bullish Accumulation",
         recommendation="BUY"
     )
 
@@ -183,3 +182,91 @@ async def test_get_latest_synthesis_reports_deduplication():
     assert "AAPL" in tickers
     assert "MSFT" in tickers
     assert len(set(tickers)) == 2
+
+
+@pytest.mark.asyncio
+async def test_capitoltrades_html_ingestion_and_fallback():
+    from app.smart_money_ingestor import fetch_recent_congressional_purchases
+
+    sample_html = """
+    <table><tbody>
+      <tr>
+        <td>Gil Cisneros | Democrat | House | CA</td>
+        <td>Alexandria Real Estate | ARE:US</td>
+        <td>14:01 | Today</td>
+        <td>20 Oct | 2026</td>
+        <td>days | 21</td>
+        <td>Undisclosed</td>
+        <td>buy</td>
+        <td>15K–50K</td>
+        <td>$42.65</td>
+        <td><a href="/trades/20003804117">Detail</a></td>
+      </tr>
+      <tr>
+        <td>Tom Suozzi | Democrat | House | NY</td>
+        <td>US TREASURY BILLS | N/A</td>
+        <td>14:05 | Yesterday</td>
+        <td>15 Oct | 2026</td>
+        <td>days | 25</td>
+        <td>Undisclosed</td>
+        <td>buy</td>
+        <td>15K–50K</td>
+        <td>N/A</td>
+        <td><a href="/trades/20003804116">Detail</a></td>
+      </tr>
+      <tr>
+        <td>Julie Johnson | Democrat | House | TX</td>
+        <td>Warner Bros | WBD:US</td>
+        <td>14:01 | Today</td>
+        <td>7 Oct | 2026</td>
+        <td>days | 34</td>
+        <td>Joint</td>
+        <td>sell</td>
+        <td>1K–15K</td>
+        <td>N/A</td>
+        <td><a href="/trades/20003804182">Detail</a></td>
+      </tr>
+    </tbody></table>
+    """
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.text = sample_html
+
+    mock_client = AsyncMock()
+    mock_client.__aenter__.return_value = mock_client
+    mock_client.get.return_value = mock_resp
+
+    with patch("app.smart_money_ingestor.httpx.AsyncClient", return_value=mock_client), \
+         patch("app.smart_money_ingestor.is_valid_ticker", return_value=True):
+        trades = await fetch_recent_congressional_purchases(limit=10)
+
+    # Should keep only ARE buy, skip N/A treasury and skip sell WBD
+    assert len(trades) == 1
+    assert trades[0]["ticker"] == "ARE"
+    assert trades[0]["politician"] == "Gil Cisneros"
+    assert trades[0]["party"] == "Democrat"
+    assert trades[0]["chamber"] == "House"
+    assert trades[0]["amount_range"] == "$15,001 - $50,000"
+    assert trades[0]["trade_date"] == "2026-10-20"
+    assert trades[0]["source_url"] == "https://www.capitoltrades.com/trades/20003804117"
+
+    # Now verify DDGS fallback handles (MCD:US) format if HTML fails
+    with patch("app.smart_money_ingestor._fetch_capitoltrades_html", side_effect=RuntimeError("network down")), \
+         patch("app.smart_money_ingestor.DDGS") as mock_ddgs_cls, \
+         patch("app.smart_money_ingestor.is_valid_ticker", return_value=True):
+        mock_ddgs = MagicMock()
+        mock_ddgs.text.return_value = [
+            {
+                "title": "Ro Khanna bought McDonald's Corp (MCD:US) on 2026-09-11",
+                "body": "Rep. Ro Khanna bought $32,500 of McDonald's Corp (MCD:US).",
+                "href": "https://www.capitoltrades.com/trades/123",
+            }
+        ]
+        mock_ddgs_cls.return_value = mock_ddgs
+        fb_trades = await fetch_recent_congressional_purchases(limit=5)
+
+    assert len(fb_trades) >= 1
+    assert fb_trades[0]["ticker"] == "MCD"
+    assert fb_trades[0]["politician"] == "Rep. Ro Khanna"
+

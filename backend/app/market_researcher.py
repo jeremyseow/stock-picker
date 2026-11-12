@@ -19,6 +19,8 @@ def fetch_financial_metrics(ticker_symbol: str) -> dict:
         
         # Extract key metrics
         metrics = {
+            "short_name": info.get("shortName"),
+            "long_name": info.get("longName"),
             "current_price": info.get("currentPrice", info.get("regularMarketPrice")),
             "target_price": info.get("targetMeanPrice"),
             "market_cap": info.get("marketCap"),

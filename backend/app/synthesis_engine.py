@@ -6,6 +6,10 @@ from app.crud import (
     get_latest_smart_money_tickers,
     get_latest_options_whale_tickers,
     get_latest_core_equity_report,
+    get_latest_retail_report,
+    get_latest_smart_money_report,
+    get_latest_options_whale_report,
+    get_insider_trades_by_ticker,
     save_synthesis_reports,
 )
 from app.models import DailyTicker, RetailSentimentReport, OptionsWhaleTicker
@@ -56,15 +60,14 @@ async def generate_cross_engine_synthesis(db: AsyncSession) -> List[Dict[str, An
                 "engagement": t.engagement_score,
             }
 
-    # Fetch latest Engine 1 reports for sentiment & verdicts
+    # Fetch latest Engine 1 reports for sentiment & report FK linkage
     e1_reports = {}
     for ticker in e1_tickers:
-        rep_q = select(RetailSentimentReport).where(RetailSentimentReport.ticker == ticker).order_by(desc(RetailSentimentReport.date)).limit(1)
-        rep = (await db.execute(rep_q)).scalar_one_or_none()
+        rep = await get_latest_retail_report(db, ticker)
         if rep:
             e1_reports[ticker] = {
+                "id": rep.id,
                 "sentiment": rep.community_sentiment,
-                "smart_money_verdict": rep.smart_money_verdict,
                 "recommendation": rep.recommendation,
             }
 
@@ -72,7 +75,10 @@ async def generate_cross_engine_synthesis(db: AsyncSession) -> List[Dict[str, An
     e2_tickers_list = await get_latest_smart_money_tickers(db)
     e2_tickers = {}
     for sm in e2_tickers_list:
-        e2_tickers[sm.ticker.upper()] = {
+        sym = sm.ticker.upper()
+        sm_rep = await get_latest_smart_money_report(db, sym)
+        e2_tickers[sym] = {
+            "report_id": sm_rep.id if sm_rep else None,
             "rank": sm.rank,
             "conviction": sm.conviction_score,
             "cluster_count": sm.cluster_count,
@@ -80,11 +86,14 @@ async def generate_cross_engine_synthesis(db: AsyncSession) -> List[Dict[str, An
             "buyer_summary": sm.top_buyer_summary,
         }
 
-    # 3. Fetch latest Engine 3 (Whale Options) tickers
+    # 3. Fetch latest Engine 3 (Whale Options) tickers & reports
     e3_tickers_list = await get_latest_options_whale_tickers(db)
     e3_tickers = {}
     for ow in e3_tickers_list:
-        e3_tickers[ow.ticker.upper()] = {
+        sym = ow.ticker.upper()
+        ow_rep = await get_latest_options_whale_report(db, sym)
+        e3_tickers[sym] = {
+            "report_id": ow_rep.id if ow_rep else None,
             "rank": ow.rank,
             "whale_score": ow.whale_score,
             "unusual_oi": ow.unusual_oi_multiplier,
@@ -106,14 +115,22 @@ async def generate_cross_engine_synthesis(db: AsyncSession) -> List[Dict[str, An
         conviction = e2_data.get("conviction", 0.0)
         whale_score = e3_data.get("whale_score", 0.0)
         pc_ratio = e3_data.get("pc_ratio", 1.0)
-        e1_verdict = (e1_rep.get("smart_money_verdict") or "").lower()
+
+        # Evaluate Form 4 insider selling strictly from Engine 2's insider_trades_raw
+        insider_rows = await get_insider_trades_by_ticker(db, ticker, limit=25)
+        buy_val = sum((r.total_value or 0.0) for r in insider_rows if r.transaction_type == "BUY")
+        sell_val = sum((r.total_value or 0.0) for r in insider_rows if r.transaction_type == "SELL")
+        buy_sh = sum((r.shares or 0.0) for r in insider_rows if r.transaction_type == "BUY")
+        sell_sh = sum((r.shares or 0.0) for r in insider_rows if r.transaction_type == "SELL")
+        is_insider_selling = bool(
+            insider_rows and (sell_val > buy_val or (sell_sh > buy_sh and sell_sh > 0))
+        )
 
         # Classify Signals
         is_high_retail = mentions >= 10 or e1_data.get("rank") is not None
         is_high_smart_money = conviction >= 20.0 or e2_data.get("cluster_count", 0) >= 2
         is_whale_bullish = whale_score >= 40.0 and pc_ratio <= 0.65
         is_whale_bearish = pc_ratio >= 1.5 and whale_score >= 25.0
-        is_insider_selling = "selling" in e1_verdict or "divergence" in e1_verdict
 
         # Triangulation Archetype Classification
         if is_high_retail and (is_insider_selling or is_whale_bearish):
@@ -167,16 +184,23 @@ async def generate_cross_engine_synthesis(db: AsyncSession) -> List[Dict[str, An
             else:
                 whale_flow_label = "Neutral Options Tape"
 
+        flow_label = e2_data.get("buyer_summary") or (
+            "Bearish Divergence: C-Suite Selling" if is_insider_selling else "Neutral"
+        )
+
         synthesis_results.append({
             "ticker": ticker,
             "core_intel_id": core_intel.id if core_intel else None,
+            "retail_report_id": e1_rep.get("id"),
+            "smart_money_report_id": e2_data.get("report_id"),
+            "options_whale_report_id": e3_data.get("report_id"),
             "archetype": archetype,
             "retail_rank": e1_data.get("rank"),
             "retail_mentions": mentions,
             "retail_sentiment": sentiment,
             "smart_money_rank": e2_data.get("rank"),
             "smart_money_conviction": conviction,
-            "smart_money_flow": e2_data.get("buyer_summary") or e1_rep.get("smart_money_verdict", "Neutral"),
+            "smart_money_flow": flow_label,
             "retail_awareness_level": awareness,
             "timing_edge_score": timing_edge,
             "synthesis_diagnosis": diagnosis,

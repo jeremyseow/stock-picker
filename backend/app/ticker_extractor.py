@@ -63,11 +63,24 @@ def process_and_rank_tickers(posts_data):
         post_text = f"{post.get('title', '')} {post.get('selftext', '')}"
         post_tickers = extract_tickers_from_text(post_text)
         
+        post_sub = post.get("subreddit", "")
+        post_title = post.get("title", "")
+        post_author = post.get("author", "")
+        post_permalink = post.get("permalink", "")
+        post_url = f"https://www.reddit.com{post_permalink}" if post_permalink else post.get("url", "")
+        post_num_comments = post.get("num_comments", 0)
+
         for ticker in post_tickers:
             ticker_scores[ticker] += max(post_score, 1) # Prevent 0 score
             ticker_contexts[ticker].append({
                 "type": "post",
-                "id": post["id"],
+                "id": post.get("id"),
+                "post_id": post.get("id"),
+                "subreddit": post_sub,
+                "title": post_title,
+                "author": post_author,
+                "post_url": post_url,
+                "num_comments": post_num_comments,
                 "text": post_text,
                 "score": post_score
             })
@@ -82,7 +95,13 @@ def process_and_rank_tickers(posts_data):
                 ticker_scores[ticker] += max(comment_score, 1)
                 ticker_contexts[ticker].append({
                     "type": "comment",
-                    "id": comment["id"],
+                    "id": comment.get("id"),
+                    "post_id": post.get("id"),
+                    "subreddit": post_sub,
+                    "title": post_title,
+                    "author": comment.get("author") or post_author,
+                    "post_url": post_url,
+                    "num_comments": post_num_comments,
                     "text": comment_text,
                     "score": comment_score
                 })
@@ -114,13 +133,37 @@ def get_ranked_tickers_with_context(posts_data, limit: int = None):
         context_items = context_items[:20]
         
         context_text = "\n\n".join([f"[{item['type'].upper()} | Score: {item['score']}]: {item['text']}" for item in context_items])
-        
-        results.append({
+
+        # Preserve contributing subreddits and top post metadata for RetailSocialRaw
+        seen_subs = []
+        for item in context_items:
+            sub = (item.get("subreddit") or "").strip()
+            if sub and sub not in seen_subs:
+                seen_subs.append(sub)
+
+        post_items = [item for item in context_items if item.get("type") == "post" and item.get("post_id")]
+        lead_item = post_items[0] if post_items else (context_items[0] if context_items else {})
+
+        entry = {
             "ticker": ticker,
             "engagement_score": score,
             "mention_count": len(ticker_contexts[ticker]),
-            "context_text": context_text
-        })
+            "context_text": context_text,
+        }
+        if seen_subs:
+            entry["subreddit"] = ", ".join(seen_subs)
+        if lead_item.get("post_id"):
+            entry["post_id"] = lead_item["post_id"]
+        if lead_item.get("title"):
+            entry["title"] = lead_item["title"]
+        if lead_item.get("author"):
+            entry["author"] = lead_item["author"]
+        if lead_item.get("post_url"):
+            entry["post_url"] = lead_item["post_url"]
+        if lead_item.get("num_comments"):
+            entry["comment_count"] = lead_item["num_comments"]
+
+        results.append(entry)
         
     return results
 

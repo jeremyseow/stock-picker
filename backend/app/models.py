@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, JSON, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, Float, DateTime, JSON, ForeignKey, Text, Boolean, Table
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 from app.database import Base
@@ -143,6 +143,7 @@ class OptionsWhaleRaw(Base):
     timestamp = Column(String, nullable=True)
     strike = Column(Float, nullable=True)
     expiry_date = Column(String, nullable=True)
+    dte = Column(Integer, nullable=True)
     option_type = Column(String, nullable=True)  # CALL, PUT
     volume = Column(Integer, default=0)
     open_interest = Column(Integer, default=0)
@@ -150,6 +151,8 @@ class OptionsWhaleRaw(Base):
     spot_price = Column(Float, nullable=True)
     premium_spent = Column(Float, default=0.0)
     sentiment = Column(String, nullable=True)
+    is_otm = Column(Boolean, nullable=True)
+    is_sweep = Column(Boolean, nullable=True)
 
 
 # ==========================================
@@ -160,12 +163,14 @@ class CoreEquityReport(Base):
     """
     Shared foundational equity research record across discovery engines.
     Single source of truth for fundamentals, SEC 10-Q/8-K ground truth, corporate news, and risks.
+    Raw JSON payloads (raw_metrics, raw_news, raw_filings) live strictly on CoreEquityRaw.
     """
     __tablename__ = "core_equity_reports"
 
     id = Column(Integer, primary_key=True, index=True)
     ticker = Column(String, index=True)
     date = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    core_raw_id = Column(Integer, ForeignKey("core_equity_raw.id"), nullable=True, index=True)
 
     company_name = Column(String, nullable=True)
     sector = Column(String, nullable=True)
@@ -181,15 +186,26 @@ class CoreEquityReport(Base):
     risk_analysis = Column(String, nullable=True)
     actionable_insight = Column(String, nullable=True)
 
-    raw_metrics = Column(JSON, nullable=True)
-    raw_news = Column(JSON, nullable=True)
-    raw_filings = Column(JSON, nullable=True)
+    core_raw = relationship("CoreEquityRaw", foreign_keys=[core_raw_id], lazy="selectin")
+
+    @property
+    def raw_metrics(self):
+        return (self.core_raw.raw_metrics if self.core_raw else None) or {}
+
+    @property
+    def raw_news(self):
+        return (self.core_raw.raw_news if self.core_raw else None) or []
+
+    @property
+    def raw_filings(self):
+        return (self.core_raw.raw_filings if self.core_raw else None) or []
 
 
 class RetailSentimentReport(Base):
     """
     Engine 1 specialized overlay: Retail sentiment, hype narrative, and conservative recommendation.
-    Links to CoreEquityReport for fundamental grounding.
+    Links to CoreEquityReport for fundamental grounding and DailyTicker for social leaderboard metrics.
+    Does NOT own Engine 2 insider/Congressional columns.
     """
     __tablename__ = "retail_sentiment_reports"
 
@@ -197,10 +213,7 @@ class RetailSentimentReport(Base):
     ticker = Column(String, index=True)
     date = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
     core_intel_id = Column(Integer, ForeignKey("core_equity_reports.id"), nullable=True, index=True)
-
-    rank = Column(Integer, nullable=True)
-    mention_count = Column(Integer, default=0)
-    engagement_score = Column(Float, default=0.0)
+    daily_ticker_id = Column(Integer, ForeignKey("daily_tickers.id"), nullable=True, index=True)
 
     community_sentiment = Column(String, nullable=True)
     community_hype = Column(String, nullable=True)
@@ -208,85 +221,76 @@ class RetailSentimentReport(Base):
     recommendation = Column(String, nullable=True)  # BUY, SELL, HOLD
     recommendation_rationale = Column(String, nullable=True)
     reconciliation_actionable_insight = Column(String, nullable=True)
-    smart_money_verdict = Column(String, nullable=True)
-    raw_insider_data = Column(JSON, nullable=True)
 
-    # Relational link to single source of truth
+    # Relational links to single sources of truth
     core_intel = relationship("CoreEquityReport", foreign_keys=[core_intel_id], lazy="selectin")
+    daily_ticker = relationship("DailyTicker", foreign_keys=[daily_ticker_id], lazy="selectin")
 
-    def __init__(self, **kwargs):
-        # Absorb normalized fields if passed by callers/fixtures
-        self._current_price = kwargs.pop("current_price", None)
-        self._target_price = kwargs.pop("target_price", None)
-        self._ground_truth_status = kwargs.pop("ground_truth_status", None)
-        self._ground_truth_filings_news = kwargs.pop("ground_truth_filings_news", None)
-        self._events_happenings = kwargs.pop("events_happenings", None)
-        self._risk_score = kwargs.pop("reconciliation_risk_score", kwargs.pop("risk_score", None))
-        self._risk_analysis = kwargs.pop("reconciliation_analysis", kwargs.pop("risk_analysis", None))
-        self._raw_metrics = kwargs.pop("raw_metrics", None)
-        self._raw_news = kwargs.pop("raw_news", None)
-        super().__init__(**kwargs)
+    @property
+    def rank(self):
+        return self.daily_ticker.rank if self.daily_ticker else None
 
-    # Transparent property proxies for backward-compatibility
+    @property
+    def mention_count(self):
+        return self.daily_ticker.mention_count if self.daily_ticker else 0
+
+    @property
+    def engagement_score(self):
+        return self.daily_ticker.engagement_score if self.daily_ticker else 0.0
+
+    @property
+    def company_name(self):
+        return self.core_intel.company_name if self.core_intel else self.ticker
+
+    @property
+    def sector(self):
+        return self.core_intel.sector if self.core_intel else "General"
+
+    @property
+    def industry(self):
+        return self.core_intel.industry if self.core_intel else "General"
+
     @property
     def current_price(self):
-        if self.core_intel and self.core_intel.current_price is not None:
-            return self.core_intel.current_price
-        return getattr(self, "_current_price", None)
+        return self.core_intel.current_price if self.core_intel else None
 
     @property
     def target_price(self):
-        if self.core_intel and self.core_intel.target_price is not None:
-            return self.core_intel.target_price
-        return getattr(self, "_target_price", None)
+        return self.core_intel.target_price if self.core_intel else None
 
     @property
     def ground_truth_status(self):
-        if self.core_intel and self.core_intel.ground_truth_status is not None:
-            return self.core_intel.ground_truth_status
-        return getattr(self, "_ground_truth_status", None)
+        return self.core_intel.ground_truth_status if self.core_intel else None
 
     @property
     def ground_truth_filings_news(self):
-        if self.core_intel and self.core_intel.ground_truth_filings_news is not None:
-            return self.core_intel.ground_truth_filings_news
-        return getattr(self, "_ground_truth_filings_news", None)
+        return self.core_intel.ground_truth_filings_news if self.core_intel else None
 
     @property
     def events_happenings(self):
-        if self.core_intel and self.core_intel.events_happenings is not None:
-            return self.core_intel.events_happenings
-        return getattr(self, "_events_happenings", None)
+        return self.core_intel.events_happenings if self.core_intel else None
 
     @property
     def reconciliation_risk_score(self):
-        if self.core_intel and self.core_intel.risk_score is not None:
-            return self.core_intel.risk_score
-        return getattr(self, "_risk_score", None)
+        return self.core_intel.risk_score if self.core_intel else None
 
     @property
     def reconciliation_analysis(self):
-        if self.core_intel and self.core_intel.risk_analysis is not None:
-            return self.core_intel.risk_analysis
-        return getattr(self, "_risk_analysis", None)
+        return self.core_intel.risk_analysis if self.core_intel else None
 
     @property
     def raw_metrics(self):
-        if self.core_intel and self.core_intel.raw_metrics is not None:
-            return self.core_intel.raw_metrics
-        return getattr(self, "_raw_metrics", {})
+        return self.core_intel.raw_metrics if self.core_intel else {}
 
     @property
     def raw_news(self):
-        if self.core_intel and self.core_intel.raw_news is not None:
-            return self.core_intel.raw_news
-        return getattr(self, "_raw_news", [])
+        return self.core_intel.raw_news if self.core_intel else []
 
 
 class SmartMoneyReport(Base):
     """
     Engine 2 specialized overlay: Form 4 inflow ledger, committee jurisdiction, and swing catalyst horizon.
-    Links to CoreEquityReport for fundamental grounding.
+    Links to CoreEquityReport for fundamental grounding and SmartMoneyTicker for leaderboard scores.
     """
     __tablename__ = "smart_money_reports"
 
@@ -294,13 +298,9 @@ class SmartMoneyReport(Base):
     ticker = Column(String, index=True)
     date = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
     core_intel_id = Column(Integer, ForeignKey("core_equity_reports.id"), nullable=True, index=True)
+    smart_money_ticker_id = Column(Integer, ForeignKey("smart_money_tickers.id"), nullable=True, index=True)
 
-    rank = Column(Integer, nullable=True)
-    conviction_score = Column(Float, default=0.0)
     conviction_tier = Column(String, nullable=True)
-    cluster_count = Column(Integer, default=0)
-    total_buy_volume = Column(Float, default=0.0)
-    top_buyer_summary = Column(String, nullable=True)
     inflow_ledger = Column(JSON, nullable=True)
 
     political_catalyst_analysis = Column(String, nullable=True)
@@ -308,89 +308,102 @@ class SmartMoneyReport(Base):
     catalyst_horizon = Column(String, nullable=True)
     actionable_thesis = Column(String, nullable=True)
 
-    # Relational link to single source of truth
+    # Relational links to single sources of truth
     core_intel = relationship("CoreEquityReport", foreign_keys=[core_intel_id], lazy="selectin")
+    smart_money_ticker = relationship("SmartMoneyTicker", foreign_keys=[smart_money_ticker_id], lazy="selectin")
 
-    def __init__(self, **kwargs):
-        self._company_name = kwargs.pop("company_name", None)
-        self._sector = kwargs.pop("sector", None)
-        self._industry = kwargs.pop("industry", None)
-        self._current_price = kwargs.pop("current_price", None)
-        self._target_price = kwargs.pop("target_price", None)
-        self._ground_truth_status = kwargs.pop("ground_truth_status", None)
-        self._ground_truth_filings_news = kwargs.pop("ground_truth_filings_news", None)
-        self._events_happenings = kwargs.pop("events_happenings", None)
-        self._risk_score = kwargs.pop("risk_score", None)
-        self._raw_metrics = kwargs.pop("raw_metrics", None)
-        super().__init__(**kwargs)
+    @property
+    def rank(self):
+        return self.smart_money_ticker.rank if self.smart_money_ticker else None
 
-    # Transparent property proxies for backward-compatibility
+    @property
+    def conviction_score(self):
+        return self.smart_money_ticker.conviction_score if self.smart_money_ticker else 0.0
+
+    @property
+    def insider_score(self):
+        return self.smart_money_ticker.insider_score if self.smart_money_ticker else 0.0
+
+    @property
+    def political_score(self):
+        return self.smart_money_ticker.political_score if self.smart_money_ticker else 0.0
+
+    @property
+    def cluster_count(self):
+        return self.smart_money_ticker.cluster_count if self.smart_money_ticker else 0
+
+    @property
+    def total_buy_volume(self):
+        return self.smart_money_ticker.total_buy_volume if self.smart_money_ticker else 0.0
+
+    @property
+    def top_buyer_summary(self):
+        return self.smart_money_ticker.top_buyer_summary if self.smart_money_ticker else ""
+
     @property
     def company_name(self):
-        if self.core_intel and self.core_intel.company_name is not None:
-            return self.core_intel.company_name
-        return getattr(self, "_company_name", self.ticker)
+        return self.core_intel.company_name if self.core_intel else self.ticker
 
     @property
     def sector(self):
-        if self.core_intel and self.core_intel.sector is not None:
-            return self.core_intel.sector
-        return getattr(self, "_sector", "General")
+        return self.core_intel.sector if self.core_intel else "General"
 
     @property
     def industry(self):
-        if self.core_intel and self.core_intel.industry is not None:
-            return self.core_intel.industry
-        return getattr(self, "_industry", "General")
+        return self.core_intel.industry if self.core_intel else "General"
 
     @property
     def current_price(self):
-        if self.core_intel and self.core_intel.current_price is not None:
-            return self.core_intel.current_price
-        return getattr(self, "_current_price", None)
+        return self.core_intel.current_price if self.core_intel else None
 
     @property
     def target_price(self):
-        if self.core_intel and self.core_intel.target_price is not None:
-            return self.core_intel.target_price
-        return getattr(self, "_target_price", None)
+        return self.core_intel.target_price if self.core_intel else None
 
     @property
     def ground_truth_status(self):
-        if self.core_intel and self.core_intel.ground_truth_status is not None:
-            return self.core_intel.ground_truth_status
-        return getattr(self, "_ground_truth_status", None)
+        return self.core_intel.ground_truth_status if self.core_intel else None
 
     @property
     def ground_truth_filings_news(self):
-        if self.core_intel and self.core_intel.ground_truth_filings_news is not None:
-            return self.core_intel.ground_truth_filings_news
-        return getattr(self, "_ground_truth_filings_news", None)
+        return self.core_intel.ground_truth_filings_news if self.core_intel else None
 
     @property
     def events_happenings(self):
-        if self.core_intel and self.core_intel.events_happenings is not None:
-            return self.core_intel.events_happenings
-        return getattr(self, "_events_happenings", None)
+        return self.core_intel.events_happenings if self.core_intel else None
 
     @property
     def risk_score(self):
-        if self.core_intel and self.core_intel.risk_score is not None:
-            return self.core_intel.risk_score
-        return getattr(self, "_risk_score", None)
+        return self.core_intel.risk_score if self.core_intel else None
 
     @property
     def raw_metrics(self):
-        if self.core_intel and self.core_intel.raw_metrics is not None:
-            return self.core_intel.raw_metrics
-        return getattr(self, "_raw_metrics", {})
+        return self.core_intel.raw_metrics if self.core_intel else {}
+
+
+options_report_contracts = Table(
+    "options_report_contracts",
+    Base.metadata,
+    Column(
+        "options_report_id",
+        Integer,
+        ForeignKey("options_whale_reports.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "options_raw_id",
+        Integer,
+        ForeignKey("options_whale_raw.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+)
 
 
 class OptionsWhaleReport(Base):
     """
-    Engine 3 specialized overlay: Unusual volume-to-open-interest options sweeps, 
-    put/call skews, and institutional sentiment.
-    Links to CoreEquityReport for fundamental grounding.
+    Engine 3 specialized overlay: Institutional sentiment bias for unusual options flow.
+    Links to CoreEquityReport for fundamentals, OptionsWhaleTicker for scores,
+    and OptionsWhaleRaw (via options_report_contracts) for unusual contract details.
     """
     __tablename__ = "options_whale_reports"
 
@@ -398,124 +411,162 @@ class OptionsWhaleReport(Base):
     ticker = Column(String, index=True)
     date = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
     core_intel_id = Column(Integer, ForeignKey("core_equity_reports.id"), nullable=True, index=True)
+    options_whale_ticker_id = Column(Integer, ForeignKey("options_whale_tickers.id"), nullable=True, index=True)
 
-    rank = Column(Integer, nullable=True)
-    whale_score = Column(Float, default=0.0)
-    unusual_oi_multiplier = Column(Float, default=1.0)
-    put_call_ratio = Column(Float, default=1.0)
-    net_bullish_premium = Column(Float, default=0.0)
     sentiment_bias = Column(String, nullable=True)  # "Extremely Bullish", "Bullish Sweeps", "Cautious / Put Skew"
-    top_strike_summary = Column(String, nullable=True)
-    unusual_contracts = Column(JSON, nullable=True)
 
-    # Relational link to single source of truth
+    # Relational links to single sources of truth
     core_intel = relationship("CoreEquityReport", foreign_keys=[core_intel_id], lazy="selectin")
+    options_whale_ticker = relationship("OptionsWhaleTicker", foreign_keys=[options_whale_ticker_id], lazy="selectin")
+    raw_contracts = relationship(
+        "OptionsWhaleRaw",
+        secondary=options_report_contracts,
+        lazy="selectin",
+        order_by="desc(OptionsWhaleRaw.premium_spent)",
+    )
 
-    def __init__(self, **kwargs):
-        self._company_name = kwargs.pop("company_name", None)
-        self._sector = kwargs.pop("sector", None)
-        self._industry = kwargs.pop("industry", None)
-        self._current_price = kwargs.pop("current_price", None)
-        self._target_price = kwargs.pop("target_price", None)
-        self._ground_truth_status = kwargs.pop("ground_truth_status", None)
-        self._ground_truth_filings_news = kwargs.pop("ground_truth_filings_news", None)
-        self._events_happenings = kwargs.pop("events_happenings", None)
-        self._risk_score = kwargs.pop("risk_score", None)
-        self._raw_metrics = kwargs.pop("raw_metrics", None)
-        super().__init__(**kwargs)
+    @property
+    def rank(self):
+        return self.options_whale_ticker.rank if self.options_whale_ticker else None
 
-    # Transparent property proxies for backward-compatibility
+    @property
+    def whale_score(self):
+        return self.options_whale_ticker.whale_score if self.options_whale_ticker else 0.0
+
+    @property
+    def unusual_oi_multiplier(self):
+        return self.options_whale_ticker.unusual_oi_multiplier if self.options_whale_ticker else 1.0
+
+    @property
+    def put_call_ratio(self):
+        return self.options_whale_ticker.put_call_ratio if self.options_whale_ticker else 1.0
+
+    @property
+    def net_bullish_premium(self):
+        return self.options_whale_ticker.net_bullish_premium if self.options_whale_ticker else 0.0
+
+    @property
+    def top_strike_summary(self):
+        return self.options_whale_ticker.top_strike_summary if self.options_whale_ticker else ""
+
+    @property
+    def unusual_contracts(self):
+        return [
+            {
+                "type": c.option_type,
+                "strike": c.strike,
+                "expiration": c.expiry_date,
+                "dte": c.dte,
+                "volume": c.volume,
+                "open_interest": c.open_interest,
+                "ratio": c.volume_oi_ratio,
+                "spot": c.spot_price,
+                "premium": c.premium_spent,
+                "sentiment": c.sentiment,
+                "is_otm": c.is_otm,
+                "is_sweep": c.is_sweep,
+            }
+            for c in (self.raw_contracts or [])
+        ]
+
     @property
     def company_name(self):
-        if self.core_intel and self.core_intel.company_name is not None:
-            return self.core_intel.company_name
-        return getattr(self, "_company_name", self.ticker)
+        return self.core_intel.company_name if self.core_intel else self.ticker
 
     @property
     def sector(self):
-        if self.core_intel and self.core_intel.sector is not None:
-            return self.core_intel.sector
-        return getattr(self, "_sector", "General")
+        return self.core_intel.sector if self.core_intel else "General"
 
     @property
     def industry(self):
-        if self.core_intel and self.core_intel.industry is not None:
-            return self.core_intel.industry
-        return getattr(self, "_industry", "General")
+        return self.core_intel.industry if self.core_intel else "General"
 
     @property
     def current_price(self):
-        if self.core_intel and self.core_intel.current_price is not None:
-            return self.core_intel.current_price
-        return getattr(self, "_current_price", None)
+        return self.core_intel.current_price if self.core_intel else None
 
     @property
     def target_price(self):
-        if self.core_intel and self.core_intel.target_price is not None:
-            return self.core_intel.target_price
-        return getattr(self, "_target_price", None)
+        return self.core_intel.target_price if self.core_intel else None
 
     @property
     def ground_truth_status(self):
-        if self.core_intel and self.core_intel.ground_truth_status is not None:
-            return self.core_intel.ground_truth_status
-        return getattr(self, "_ground_truth_status", None)
+        return self.core_intel.ground_truth_status if self.core_intel else None
 
     @property
     def ground_truth_filings_news(self):
-        if self.core_intel and self.core_intel.ground_truth_filings_news is not None:
-            return self.core_intel.ground_truth_filings_news
-        return getattr(self, "_ground_truth_filings_news", None)
+        return self.core_intel.ground_truth_filings_news if self.core_intel else None
 
     @property
     def events_happenings(self):
-        if self.core_intel and self.core_intel.events_happenings is not None:
-            return self.core_intel.events_happenings
-        return getattr(self, "_events_happenings", None)
+        return self.core_intel.events_happenings if self.core_intel else None
 
     @property
     def risk_score(self):
-        if self.core_intel and self.core_intel.risk_score is not None:
-            return self.core_intel.risk_score
-        return getattr(self, "_risk_score", None)
+        return self.core_intel.risk_score if self.core_intel else None
 
     @property
     def raw_metrics(self):
-        if self.core_intel and self.core_intel.raw_metrics is not None:
-            return self.core_intel.raw_metrics
-        return getattr(self, "_raw_metrics", {})
+        return self.core_intel.raw_metrics if self.core_intel else {}
 
 
 class SynthesisReport(Base):
-    """Cross-engine synthesis mapping a stock into market divergence archetypes."""
+    """
+    Cross-engine synthesis mapping a stock into market divergence archetypes.
+    Links directly to CoreEquityReport and the 3 Engine report tables instead of duplicating their metrics.
+    """
     __tablename__ = "synthesis_reports"
 
     id = Column(Integer, primary_key=True, index=True)
     ticker = Column(String, index=True)
     date = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
     core_intel_id = Column(Integer, ForeignKey("core_equity_reports.id"), nullable=True, index=True)
+    retail_report_id = Column(Integer, ForeignKey("retail_sentiment_reports.id"), nullable=True, index=True)
+    smart_money_report_id = Column(Integer, ForeignKey("smart_money_reports.id"), nullable=True, index=True)
+    options_whale_report_id = Column(Integer, ForeignKey("options_whale_reports.id"), nullable=True, index=True)
 
     archetype = Column(String)  # The Rocket, The Retail Trap, Silent Accumulation, Market Noise
-    retail_rank = Column(Integer, nullable=True)
-    retail_mentions = Column(Integer, default=0)
-    retail_sentiment = Column(String, nullable=True)
-
-    smart_money_rank = Column(Integer, nullable=True)
-    smart_money_conviction = Column(Float, default=0.0)
-    smart_money_flow = Column(String, nullable=True)
+    smart_money_flow = Column(String, nullable=True)  # Synthesized flow label (clusters or Form 4 sells)
+    whale_options_flow = Column(String, nullable=True)  # Synthesized options flow label
 
     retail_awareness_level = Column(String)  # Zero Awareness (Stealth), Emerging, Saturated Hype
     timing_edge_score = Column(Float)        # 0.0 to 100.0
     synthesis_diagnosis = Column(String)
     recommended_action = Column(String)     # STRONG BUY, AVOID/SHORT, EARLY SWING BUY, PASS
 
-    # Engine 3 options flow signals (nullable for backward compatibility)
-    whale_options_flow = Column(String, nullable=True)
-    whale_options_score = Column(Float, default=0.0)
-    put_call_ratio = Column(Float, nullable=True)
-
-    # Relational link to single source of truth
+    # Relational links to single sources of truth
     core_intel = relationship("CoreEquityReport", foreign_keys=[core_intel_id], lazy="selectin")
+    retail_report = relationship("RetailSentimentReport", foreign_keys=[retail_report_id], lazy="selectin")
+    smart_money_report = relationship("SmartMoneyReport", foreign_keys=[smart_money_report_id], lazy="selectin")
+    options_whale_report = relationship("OptionsWhaleReport", foreign_keys=[options_whale_report_id], lazy="selectin")
+
+    @property
+    def retail_rank(self):
+        return self.retail_report.rank if self.retail_report else None
+
+    @property
+    def retail_mentions(self):
+        return self.retail_report.mention_count if self.retail_report else 0
+
+    @property
+    def retail_sentiment(self):
+        return self.retail_report.community_sentiment if self.retail_report else "Unmonitored"
+
+    @property
+    def smart_money_rank(self):
+        return self.smart_money_report.rank if self.smart_money_report else None
+
+    @property
+    def smart_money_conviction(self):
+        return self.smart_money_report.conviction_score if self.smart_money_report else 0.0
+
+    @property
+    def whale_options_score(self):
+        return self.options_whale_report.whale_score if self.options_whale_report else 0.0
+
+    @property
+    def put_call_ratio(self):
+        return self.options_whale_report.put_call_ratio if self.options_whale_report else None
 
 
 # ==========================================

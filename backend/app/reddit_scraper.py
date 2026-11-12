@@ -176,6 +176,7 @@ class RedditOAuthClient:
                 "id": p.get("id"),
                 "title": p.get("title", ""),
                 "selftext": p.get("selftext", ""),
+                "author": p.get("author", ""),
                 "score": p.get("score", 1),
                 "num_comments": p.get("num_comments", 0),
                 "upvote_ratio": p.get("upvote_ratio", 1.0),

@@ -1,7 +1,11 @@
 import logging
 import asyncio
+from datetime import timedelta
+from sqlalchemy import func
+from sqlalchemy.future import select
 from app.database import init_db, AsyncSessionLocal
-from app.smart_money_ingestor import ingest_all_smart_money
+from app.models import DailyTicker
+from app.smart_money_ingestor import ingest_all_smart_money, fetch_form4_flows_for_tickers
 from app.smart_money_scorer import rank_smart_money_candidates
 from app.smart_money_researcher import research_smart_money_candidate
 from app.core_intel_engine import research_core_equity_intel
@@ -19,10 +23,10 @@ _smart_money_lock = asyncio.Lock()
 async def run_smart_money_pipeline(limit: int = 5) -> list[dict]:
     """
     Executes Engine 2 (Smart Money & Political Scout):
-    1. Ingests Form 4 cash purchases & Congressional disclosures.
+    1. Ingests Form 4 cash purchases, Form 4 insider flows (including SELLs), & Congressional disclosures.
     2. Scores and filters candidates down to top `limit` stocks.
     3. Researches legislative, macro, and corporate catalysts.
-    4. Persists records to database.
+    4. Persists records to database with clean relational links.
     """
     if _smart_money_lock.locked():
         logger.warning("Engine 2 (Smart Money Scout) is already running. Skipping concurrent run.")
@@ -44,13 +48,25 @@ async def run_smart_money_pipeline(limit: int = 5) -> list[dict]:
             logger.warning("No qualifying smart money candidates found.")
             return []
 
-        # Step 3: Persistence of Raw Evidence & Tickers
+        # Also ingest full Form 4 BUY/SELL history for latest Engine 1 trending tickers + top candidates
+        saved_tickers = []
         async with AsyncSessionLocal() as db:
-            if insiders:
-                await save_insider_trades_raw(db, insiders)
+            e1_ts = (await db.execute(select(func.max(DailyTicker.date)))).scalar_one_or_none()
+            e1_syms: list[str] = []
+            if e1_ts:
+                e1_q = select(DailyTicker.ticker).where(DailyTicker.date >= e1_ts - timedelta(minutes=5))
+                e1_syms = [s.upper() for s in (await db.execute(e1_q)).scalars().all()]
+
+            flow_targets = list(dict.fromkeys([c["ticker"].upper() for c in top_candidates] + e1_syms))
+            form4_flows = await asyncio.to_thread(fetch_form4_flows_for_tickers, flow_targets)
+
+            # Step 3: Persistence of Raw Evidence & Leaderboard Tickers
+            all_insiders = insiders + form4_flows
+            if all_insiders:
+                await save_insider_trades_raw(db, all_insiders)
             if congress:
                 await save_congress_trades_raw(db, congress)
-            await save_smart_money_tickers(db, top_candidates)
+            saved_tickers = await save_smart_money_tickers(db, top_candidates)
 
         # Step 4: Research & Report Generation
         reports = []
@@ -62,18 +78,14 @@ async def run_smart_money_pipeline(limit: int = 5) -> list[dict]:
 
                 logger.info(f"Generating Smart Money Catalyst report for ${ticker}...")
                 report_data = await research_smart_money_candidate(c)
-                report_data["rank"] = idx + 1
-                report_data["ground_truth_status"] = core_intel.get("ground_truth_status")
-                report_data["ground_truth_filings_news"] = core_intel.get("ground_truth_filings_news")
-                report_data["events_happenings"] = core_intel.get("events_happenings")
-                report_data["risk_score"] = core_intel.get("risk_score")
-                report_data["raw_metrics"] = core_intel.get("raw_metrics") or report_data.get("raw_metrics", {})
-                if not report_data.get("current_price") and core_intel.get("current_price"):
-                    report_data["current_price"] = core_intel.get("current_price")
-                if not report_data.get("target_price") and core_intel.get("target_price"):
-                    report_data["target_price"] = core_intel.get("target_price")
+                sm_ticker_id = saved_tickers[idx].id if idx < len(saved_tickers) else None
 
-                await save_smart_money_report(db, report_data, core_intel_id=core_intel.get("id"))
+                await save_smart_money_report(
+                    db,
+                    report_data,
+                    core_intel_id=core_intel.get("id"),
+                    smart_money_ticker_id=sm_ticker_id,
+                )
                 reports.append(report_data)
 
         logger.info(f"Engine 2 completed successfully: {len(reports)} reports generated.")

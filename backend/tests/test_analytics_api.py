@@ -8,8 +8,11 @@ from app.database import Base, get_db
 from app.models import (
     RetailSentimentReport,
     CoreEquityReport,
+    CoreEquityRaw,
+    DailyTicker,
     SynthesisReport,
     OptionsWhaleReport,
+    OptionsWhaleTicker,
     SmartMoneyReport,
 )
 from app.main import app
@@ -25,98 +28,72 @@ async def test_db():
         await conn.run_sync(Base.metadata.create_all)
         
     async with async_session() as session:
-        # Seed test data
-        r1 = RetailSentimentReport(
-            ticker="AAPL",
-            date=datetime(2026, 10, 28, 12, 0, 0, tzinfo=timezone.utc),
-            current_price=220.0,
-            target_price=240.0,
-            community_sentiment="60% Bullish",
-            community_hype="iPhone 18 rumors",
-            ground_truth_status="Solid hardware margins",
-            ground_truth_filings_news="10-Q showed strong services growth",
-            events_happenings="New product launch scheduled",
-            reconciliation_risk_score="Low",
-            reconciliation_analysis="Consensus aligns with retail sentiment",
-            reconciliation_actionable_insight="Track Q4 services revenue",
-            recommendation="BUY",
-            recommendation_rationale="Services growth offset hardware maturity",
-            raw_metrics={"industry": "Consumer Electronics", "sector": "Technology", "pe_ratio": 30.5}
-        )
-        r2 = RetailSentimentReport(
-            ticker="AAPL",
-            date=datetime(2026, 10, 29, 12, 0, 0, tzinfo=timezone.utc),
-            current_price=225.0,
-            target_price=245.0,
-            community_sentiment="75% Bullish",
-            community_hype="Services revenue explosion",
-            ground_truth_status="Services reached all time high",
-            ground_truth_filings_news="8-K update on international market",
-            events_happenings="Retail store expansion in Asia",
-            reconciliation_risk_score="Low",
-            reconciliation_analysis="Momentum building sustainably",
-            reconciliation_actionable_insight="Monitor gross margin stability",
-            recommendation="BUY",
-            recommendation_rationale="Services beat consensus",
-            raw_metrics={"industry": "Consumer Electronics", "sector": "Technology", "pe_ratio": 31.0}
-        )
-        r3 = RetailSentimentReport(
-            ticker="NVDA",
-            date=datetime(2026, 10, 29, 12, 0, 0, tzinfo=timezone.utc),
-            current_price=130.0,
-            target_price=150.0,
-            community_sentiment="85% Bullish",
-            community_hype="AI GPU demand soaring",
-            ground_truth_status="Data center monopoly",
-            ground_truth_filings_news="10-Q confirmed backlog",
-            events_happenings="New architecture revealed",
-            reconciliation_risk_score="Medium",
-            reconciliation_analysis="Priced for perfection",
-            reconciliation_actionable_insight="Track Blackwell shipments",
-            recommendation="HOLD",
-            recommendation_rationale="High valuation warrants holding",
-            raw_metrics={"industry": "Semiconductors", "sector": "Technology", "pe_ratio": 55.0}
-        )
-        r4 = RetailSentimentReport(
-            ticker="GOOG",
-            date=datetime(2026, 10, 29, 12, 0, 0, tzinfo=timezone.utc),
-            current_price=280.0,
-            target_price=350.0,
-            community_sentiment="70% Bullish",
-            community_hype="Cloud TPU and Gemini momentum",
-            ground_truth_status="Dominant search and cloud growth",
-            ground_truth_filings_news="10-Q confirmed strong cloud margins",
-            events_happenings="Gemini 3 launch",
-            reconciliation_risk_score="Low",
-            reconciliation_analysis="Fundamentals strong",
-            reconciliation_actionable_insight="Monitor advertising growth",
-            recommendation="BUY",
-            recommendation_rationale="Search moats intact",
-            raw_metrics={"industry": "Internet", "sector": "Technology", "pe_ratio": 24.0}
-        )
+        # Seed normalized CoreEquityRaw -> CoreEquityReport + DailyTicker -> RetailSentimentReport
+        raw1 = CoreEquityRaw(ticker="AAPL", raw_metrics={"industry": "Consumer Electronics", "sector": "Technology", "pe_ratio": 30.5})
+        raw2 = CoreEquityRaw(ticker="AAPL", raw_metrics={"industry": "Consumer Electronics", "sector": "Technology", "pe_ratio": 31.0})
+        raw3 = CoreEquityRaw(ticker="NVDA", raw_metrics={"industry": "Semiconductors", "sector": "Technology", "pe_ratio": 55.0})
+        raw4 = CoreEquityRaw(ticker="GOOG", raw_metrics={"industry": "Internet", "sector": "Technology", "pe_ratio": 24.0})
+        session.add_all([raw1, raw2, raw3, raw4])
+        await session.flush()
+
         c1 = CoreEquityReport(
-            ticker="AAPL", date=datetime(2026, 10, 28, 12, 0, 0, tzinfo=timezone.utc),
-            current_price=220.0, target_price=240.0, raw_metrics={"industry": "Consumer Electronics", "sector": "Technology", "pe_ratio": 30.5}
+            ticker="AAPL", date=datetime(2026, 10, 28, 12, 0, 0, tzinfo=timezone.utc), core_raw_id=raw1.id,
+            current_price=220.0, target_price=240.0, ground_truth_status="Solid hardware margins",
+            ground_truth_filings_news="10-Q showed strong services growth", events_happenings="New product launch scheduled",
+            risk_score="Low", risk_analysis="Consensus aligns with retail sentiment", actionable_insight="Track Q4 services revenue",
         )
         c2 = CoreEquityReport(
-            ticker="AAPL", date=datetime(2026, 10, 29, 12, 0, 0, tzinfo=timezone.utc),
-            current_price=225.0, target_price=245.0, raw_metrics={"industry": "Consumer Electronics", "sector": "Technology", "pe_ratio": 31.0}
+            ticker="AAPL", date=datetime(2026, 10, 29, 12, 0, 0, tzinfo=timezone.utc), core_raw_id=raw2.id,
+            current_price=225.0, target_price=245.0, ground_truth_status="Services reached all time high",
+            ground_truth_filings_news="8-K update on international market", events_happenings="Retail store expansion in Asia",
+            risk_score="Low", risk_analysis="Momentum building sustainably", actionable_insight="Monitor gross margin stability",
         )
         c3 = CoreEquityReport(
-            ticker="NVDA", date=datetime(2026, 10, 29, 12, 0, 0, tzinfo=timezone.utc),
-            current_price=130.0, target_price=150.0, raw_metrics={"industry": "Semiconductors", "sector": "Technology", "pe_ratio": 55.0}
+            ticker="NVDA", date=datetime(2026, 10, 29, 12, 0, 0, tzinfo=timezone.utc), core_raw_id=raw3.id,
+            current_price=130.0, target_price=150.0, ground_truth_status="Data center monopoly",
+            ground_truth_filings_news="10-Q confirmed backlog", events_happenings="New architecture revealed",
+            risk_score="Medium", risk_analysis="Priced for perfection", actionable_insight="Track Blackwell shipments",
         )
         c4 = CoreEquityReport(
-            ticker="GOOG", date=datetime(2026, 10, 29, 12, 0, 0, tzinfo=timezone.utc),
-            current_price=280.0, target_price=350.0, raw_metrics={"industry": "Internet", "sector": "Technology", "pe_ratio": 24.0}
+            ticker="GOOG", date=datetime(2026, 10, 29, 12, 0, 0, tzinfo=timezone.utc), core_raw_id=raw4.id,
+            current_price=280.0, target_price=350.0, ground_truth_status="Dominant search and cloud growth",
+            ground_truth_filings_news="10-Q confirmed strong cloud margins", events_happenings="Gemini 3 launch",
+            risk_score="Low", risk_analysis="Fundamentals strong", actionable_insight="Monitor advertising growth",
         )
         session.add_all([c1, c2, c3, c4])
         await session.flush()
 
-        r1.core_intel_id = c1.id
-        r2.core_intel_id = c2.id
-        r3.core_intel_id = c3.id
-        r4.core_intel_id = c4.id
+        d1 = DailyTicker(ticker="AAPL", date=c1.date, rank=1, mention_count=100, engagement_score=500.0)
+        d2 = DailyTicker(ticker="AAPL", date=c2.date, rank=1, mention_count=120, engagement_score=600.0)
+        d3 = DailyTicker(ticker="NVDA", date=c3.date, rank=2, mention_count=90, engagement_score=400.0)
+        d4 = DailyTicker(ticker="GOOG", date=c4.date, rank=3, mention_count=80, engagement_score=350.0)
+        session.add_all([d1, d2, d3, d4])
+        await session.flush()
+
+        r1 = RetailSentimentReport(
+            ticker="AAPL", date=c1.date, core_intel_id=c1.id, daily_ticker_id=d1.id,
+            community_sentiment="60% Bullish", community_hype="iPhone 18 rumors",
+            reconciliation_actionable_insight="Track Q4 services revenue", recommendation="BUY",
+            recommendation_rationale="Services growth offset hardware maturity",
+        )
+        r2 = RetailSentimentReport(
+            ticker="AAPL", date=c2.date, core_intel_id=c2.id, daily_ticker_id=d2.id,
+            community_sentiment="75% Bullish", community_hype="Services revenue explosion",
+            reconciliation_actionable_insight="Monitor gross margin stability", recommendation="BUY",
+            recommendation_rationale="Services beat consensus",
+        )
+        r3 = RetailSentimentReport(
+            ticker="NVDA", date=c3.date, core_intel_id=c3.id, daily_ticker_id=d3.id,
+            community_sentiment="85% Bullish", community_hype="AI GPU demand soaring",
+            reconciliation_actionable_insight="Track Blackwell shipments", recommendation="HOLD",
+            recommendation_rationale="High valuation warrants holding",
+        )
+        r4 = RetailSentimentReport(
+            ticker="GOOG", date=c4.date, core_intel_id=c4.id, daily_ticker_id=d4.id,
+            community_sentiment="70% Bullish", community_hype="Cloud TPU and Gemini momentum",
+            reconciliation_actionable_insight="Monitor advertising growth", recommendation="BUY",
+            recommendation_rationale="Search moats intact",
+        )
         session.add_all([r1, r2, r3, r4])
         await session.commit()
         
@@ -254,29 +231,36 @@ async def test_cross_engine_ticker_history_progression(test_db):
 
     async with async_session() as session:
         # Day 1: Options Whale only (no Retail)
+        raw_m1 = CoreEquityRaw(ticker="MSFT", raw_metrics={"pe_ratio": 32.0})
+        session.add(raw_m1)
+        await session.flush()
         c1 = CoreEquityReport(
             ticker="MSFT",
             date=datetime(2026, 11, 4, 12, 0, 0, tzinfo=timezone.utc),
+            core_raw_id=raw_m1.id,
             current_price=410.0,
             target_price=500.0,
             ground_truth_status="Cloud Azure growth",
             risk_score="Low",
             actionable_insight="Track Copilot ARR",
-            raw_metrics={"pe_ratio": 32.0}
         )
         session.add(c1)
         await session.flush()
 
+        owt1 = OptionsWhaleTicker(ticker="MSFT", date=c1.date, rank=1, whale_score=85.0)
+        session.add(owt1)
+        await session.flush()
         opt1 = OptionsWhaleReport(
             ticker="MSFT",
             date=datetime(2026, 11, 4, 12, 5, 0, tzinfo=timezone.utc),
             core_intel_id=c1.id,
-            whale_score=85.0
+            options_whale_ticker_id=owt1.id,
         )
         syn1 = SynthesisReport(
             ticker="MSFT",
             date=datetime(2026, 11, 4, 12, 10, 0, tzinfo=timezone.utc),
             core_intel_id=c1.id,
+            options_whale_report_id=None,
             archetype="Silent Accumulation",
             timing_edge_score=90.0,
             recommended_action="EARLY SWING BUY",
@@ -285,15 +269,18 @@ async def test_cross_engine_ticker_history_progression(test_db):
         session.add_all([opt1, syn1])
 
         # Day 2: Retail Momentum
+        raw_m2 = CoreEquityRaw(ticker="MSFT", raw_metrics={"pe_ratio": 33.0})
+        session.add(raw_m2)
+        await session.flush()
         c2 = CoreEquityReport(
             ticker="MSFT",
             date=datetime(2026, 11, 6, 12, 0, 0, tzinfo=timezone.utc),
+            core_raw_id=raw_m2.id,
             current_price=420.0,
             target_price=500.0,
             ground_truth_status="Copilot adoption expanding",
             risk_score="Low",
             actionable_insight="Monitor enterprise renewals",
-            raw_metrics={"pe_ratio": 33.0}
         )
         session.add(c2)
         await session.flush()
@@ -319,24 +306,30 @@ async def test_cross_engine_ticker_history_progression(test_db):
         session.add_all([ret2, syn2])
 
         # Day 3: Options Whale only (no Retail)
+        raw_m3 = CoreEquityRaw(ticker="MSFT", raw_metrics={"pe_ratio": 34.0})
+        session.add(raw_m3)
+        await session.flush()
         c3 = CoreEquityReport(
             ticker="MSFT",
             date=datetime(2026, 11, 7, 12, 0, 0, tzinfo=timezone.utc),
+            core_raw_id=raw_m3.id,
             current_price=430.0,
             target_price=500.0,
             ground_truth_status="Datacenter capacity scale",
             risk_score="Low",
             actionable_insight="Track GPU lease commitments",
-            raw_metrics={"pe_ratio": 34.0}
         )
         session.add(c3)
         await session.flush()
 
+        owt3 = OptionsWhaleTicker(ticker="MSFT", date=c3.date, rank=1, whale_score=92.0)
+        session.add(owt3)
+        await session.flush()
         opt3 = OptionsWhaleReport(
             ticker="MSFT",
             date=datetime(2026, 11, 7, 12, 5, 0, tzinfo=timezone.utc),
             core_intel_id=c3.id,
-            whale_score=92.0
+            options_whale_ticker_id=owt3.id,
         )
         syn3 = SynthesisReport(
             ticker="MSFT",

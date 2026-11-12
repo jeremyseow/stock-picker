@@ -113,7 +113,7 @@ Sector: {metrics.get('sector')}
 """
 
     news_text = "\n".join([f"- {item.get('title', '')} ({item.get('link', '')})" for item in news]) if news else "No recent standard news found."
-    web_news_text = "\n".join([f"- {item.get('title', '')}: {item.get('body', '')}" for item in web_news]) if web_news else "No web search news found."
+    web_news_text = "\n".join([f"- {item.get('title', '')}: {item.get('snippet') or item.get('body', '')}" for item in web_news]) if web_news else "No web search news found."
 
     prompt = f"""
 Conduct Core Fundamental Equity Intelligence Research on stock ticker: {ticker_clean}

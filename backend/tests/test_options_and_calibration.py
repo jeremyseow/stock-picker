@@ -6,7 +6,7 @@ from app.main import app
 from app.database import get_db, Base
 from app.options_scorer import score_options_flow, rank_whale_candidates
 from app.scoring_weights import get_active_weights, update_active_weights, reset_weights_to_default
-from app.models import CoreEquityReport, OptionsWhaleTicker, OptionsWhaleReport, SynthesisReport
+from app.models import CoreEquityReport, OptionsWhaleRaw, OptionsWhaleTicker, OptionsWhaleReport, SynthesisReport
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
@@ -118,25 +118,27 @@ async def test_options_api_endpoints(client: AsyncClient, test_db: AsyncSession)
         top_strike_summary="$50C 11/20 (3.8x OI, $400k)",
         date=now,
     )
+    test_db.add(ow_ticker)
+    await test_db.flush()
+
+    ow_raw = OptionsWhaleRaw(
+        ticker="PLTR",
+        strike=50.0,
+        option_type="CALL",
+        volume_oi_ratio=3.8,
+        captured_at=now,
+    )
+    test_db.add(ow_raw)
+    await test_db.flush()
+
     ow_rep = OptionsWhaleReport(
         ticker="PLTR",
         core_intel_id=core.id,
-        company_name="Palantir Technologies",
-        sector="Technology",
-        industry="Software",
-        current_price=45.0,
-        target_price=60.0,
-        rank=1,
-        whale_score=85.0,
-        unusual_oi_multiplier=3.8,
-        put_call_ratio=0.22,
-        net_bullish_premium=400000.0,
+        options_whale_ticker_id=ow_ticker.id,
         sentiment_bias="Extremely Bullish Sweeps",
-        top_strike_summary="$50C 11/20 (3.8x OI, $400k)",
-        unusual_contracts=[{"strike": 50.0, "type": "CALL", "ratio": 3.8}],
         date=now,
+        raw_contracts=[ow_raw],
     )
-    test_db.add(ow_ticker)
     test_db.add(ow_rep)
     await test_db.commit()
 

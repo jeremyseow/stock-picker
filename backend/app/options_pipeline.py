@@ -1,5 +1,6 @@
 import logging
 import asyncio
+from datetime import timedelta
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import AsyncSessionLocal
@@ -51,7 +52,7 @@ async def run_options_pipeline(
         e1_subq = select(func.max(DailyTicker.date))
         e1_ts = (await db.execute(e1_subq)).scalar_one_or_none()
         if e1_ts:
-            e1_q = select(DailyTicker.ticker).where(DailyTicker.date >= e1_ts)
+            e1_q = select(DailyTicker.ticker).where(DailyTicker.date >= e1_ts - timedelta(minutes=2))
             for sym in (await db.execute(e1_q)).scalars().all():
                 pool.add(sym.upper())
 
@@ -87,20 +88,22 @@ async def run_options_pipeline(
         logger.info(f"Identified top {len(ranked_candidates)} Whale Options candidates: {[c['ticker'] for c in ranked_candidates]}")
 
         # Save top ticker rows
-        await save_options_whale_tickers(db, ranked_candidates)
+        saved_tickers = await save_options_whale_tickers(db, ranked_candidates)
 
-        # Generate individual reports linked with CoreEquityReport
+        # Generate individual reports linked with CoreEquityReport and OptionsWhaleTicker
         saved_reports: List[OptionsWhaleReport] = []
-        for candidate in ranked_candidates:
+        for idx, candidate in enumerate(ranked_candidates):
             sym = candidate["ticker"]
             try:
                 # Link or generate CoreEquityReport
                 core_intel = await research_core_equity_intel(sym, db=db)
+                ow_ticker_id = saved_tickers[idx].id if idx < len(saved_tickers) else None
                 report = await save_options_whale_report(
                     db=db,
                     ticker=sym,
                     whale_data=candidate,
                     core_intel_id=core_intel.get("id") if isinstance(core_intel, dict) else (core_intel.id if core_intel else None),
+                    options_whale_ticker_id=ow_ticker_id,
                     rank=candidate.get("rank"),
                 )
                 saved_reports.append(report)

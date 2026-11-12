@@ -20,6 +20,9 @@ from app.crud import (
     get_latest_smart_money_report,
     get_smart_money_report_by_ticker,
     get_smart_money_reports_by_date,
+    get_congress_trades_by_ticker,
+    get_smart_money_verdict_for_ticker,
+    build_engine2_insider_payload,
     get_latest_synthesis_reports,
     get_synthesis_reports_by_date,
     get_synthesis_report_by_ticker,
@@ -115,6 +118,7 @@ async def get_todays_tickers(db: AsyncSession = Depends(get_db)):
         report_res = await db.execute(report_query)
         report = report_res.scalar_one_or_none()
         
+        verdict = await get_smart_money_verdict_for_ticker(db, t.ticker)
         combined.append({
             "id": t.id,
             "ticker": t.ticker,
@@ -123,7 +127,7 @@ async def get_todays_tickers(db: AsyncSession = Depends(get_db)):
             "engagement_score": t.engagement_score,
             "date": t.date,
             "recommendation": report.recommendation if report else None,
-            "smart_money_verdict": report.smart_money_verdict if report else None,
+            "smart_money_verdict": verdict,
             "current_price": report.current_price if report else None,
             "target_price": report.target_price if report else None,
             "industry": report.raw_metrics.get("industry") if report and report.raw_metrics else "Unknown",
@@ -154,6 +158,7 @@ async def get_reports_by_query(
     reports = await get_retail_reports_by_date(db, date)
     formatted = []
     for r in reports:
+        verdict = await get_smart_money_verdict_for_ticker(db, r.ticker, date_str=date)
         formatted.append({
             "id": r.id,
             "ticker": r.ticker,
@@ -162,7 +167,7 @@ async def get_reports_by_query(
             "target_price": r.target_price,
             "recommendation": r.recommendation,
             "recommendation_rationale": r.recommendation_rationale,
-            "smart_money_verdict": r.smart_money_verdict,
+            "smart_money_verdict": verdict,
             "community_sentiment": r.community_sentiment,
             "community_hype": r.community_hype,
             "ground_truth_status": r.ground_truth_status,
@@ -170,7 +175,6 @@ async def get_reports_by_query(
             "reconciliation_actionable_insight": r.reconciliation_actionable_insight,
             "industry": r.raw_metrics.get("industry") if r.raw_metrics else "Unknown",
             "sector": r.raw_metrics.get("sector") if r.raw_metrics else "Unknown",
-            "raw_insider_data": r.raw_insider_data
         })
     return formatted
 
@@ -213,7 +217,6 @@ async def get_retail_report_detail(
         "reconciliation_actionable_insight": retail_rep.reconciliation_actionable_insight,
         "raw_metrics": retail_rep.raw_metrics,
         "raw_news": retail_rep.raw_news,
-        "raw_insider_data": retail_rep.raw_insider_data,
         "core_intel": {
             "has_data": core_intel is not None,
             "company_name": core_intel.company_name if core_intel else retail_rep.ticker,
@@ -273,43 +276,15 @@ async def get_ticker_report(
                     entry["price"] = "Market"
             inflow_ledger.append(entry)
 
-    # Extract outflow/liquidation ledger from raw insider data if present
-    outflow_ledger = []
-    total_sell_volume = 0.0
-    top_seller_summary = None
-    if retail_rep and retail_rep.raw_insider_data:
-        raw_ins = retail_rep.raw_insider_data if isinstance(retail_rep.raw_insider_data, dict) else {}
-        txs = raw_ins.get("recent_transactions", [])
-        sellers = []
-        for t in txs:
-            if t.get("type") == "SELL":
-                val = t.get("value", 0) or 0
-                total_sell_volume += val
-                val_str = f"${val:,.0f}" if val else "-"
-                if val >= 1e6:
-                    val_str = f"${val/1e6:.1f}M"
-                elif val >= 1e3:
-                    val_str = f"${val/1e3:.0f}k"
-
-                name = t.get("insider") or "Executive"
-                pos = t.get("position") or "Officer"
-                seller_desc = f"{name} ({pos})"
-                if seller_desc not in sellers:
-                    sellers.append(seller_desc)
-
-                outflow_ledger.append({
-                    "date": t.get("date"),
-                    "seller": name,
-                    "role": pos,
-                    "shares": t.get("shares"),
-                    "price": t.get("price") or "-",
-                    "value": val_str,
-                    "details": t.get("details") or t.get("text") or "Open Market Sale",
-                })
-        if sellers:
-            top_seller_summary = ", ".join(sellers[:2])
-            if len(sellers) > 2:
-                top_seller_summary += f" +{len(sellers)-2} others"
+    # Extract Engine 2 outflow/liquidation ledger & raw insider/Congressional summary from Engine 2 tables
+    e2_insider = await build_engine2_insider_payload(
+        db, ticker_sym, date_str=date, smart_money_rep=smart_money_rep, synthesis_rec=synthesis_rec
+    )
+    outflow_ledger = e2_insider["outflow_ledger"]
+    total_sell_volume = e2_insider["total_sell_volume"]
+    top_seller_summary = e2_insider["top_seller_summary"]
+    base_insider = e2_insider["raw_insider_data"]
+    smart_money_verdict = e2_insider["smart_money_verdict"]
 
     # Calculate potential upside
     potential_upside = None
@@ -340,8 +315,8 @@ async def get_ticker_report(
         "recommendation_rationale": retail_rep.recommendation_rationale if retail_rep else "Report generated from institutional and fundamental scan.",
         "community_sentiment": retail_rep.community_sentiment if retail_rep else "Unmonitored",
         "community_hype": retail_rep.community_hype if retail_rep else "No active Reddit discussion tracked.",
-        "smart_money_verdict": (retail_rep and retail_rep.smart_money_verdict) or (synthesis_rec and synthesis_rec.smart_money_flow) or (smart_money_rep and smart_money_rep.conviction_tier) or "Neutral",
-        "raw_insider_data": (retail_rep and retail_rep.raw_insider_data) or {"has_data": bool(smart_money_rep), "insider_activity_summary": smart_money_rep.actionable_thesis if smart_money_rep else None, "congressional_trades": []},
+        "smart_money_verdict": smart_money_verdict,
+        "raw_insider_data": base_insider,
         "raw_metrics": raw_metrics,
         "raw_news": (core_intel and core_intel.raw_news) or (retail_rep and retail_rep.raw_news) or [],
 
@@ -721,6 +696,9 @@ async def get_smart_money_report_detail(
         "target_price": target_price,
         "conviction_score": rep.conviction_score,
         "conviction_tier": rep.conviction_tier,
+        "cluster_count": rep.cluster_count,
+        "total_buy_volume": rep.total_buy_volume,
+        "top_buyer_summary": rep.top_buyer_summary,
         "inflow_ledger": inflow_ledger,
         "political_catalyst_analysis": rep.political_catalyst_analysis,
         "corporate_catalyst_analysis": rep.corporate_catalyst_analysis,

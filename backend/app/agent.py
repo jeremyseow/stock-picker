@@ -1,35 +1,28 @@
 import os
 from pydantic_ai import Agent
-from app.llm_schemas import StockReport, TrajectoryAnalysis
+from app.llm_schemas import RetailOverlayAnalysis, TrajectoryAnalysis
 import logging
 
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """
-You are an ultra-conservative, objective financial analyst. Your job is to synthesize social sentiment, news, market metrics, SEC filings, recent web search news, and SEC Form 4 insider/Congressional trading disclosures into a structured Market Intelligence Report.
+You are an ultra-conservative, objective financial analyst specializing in Engine 1 (Retail Social Sentiment & Narrative Overlay).
+Your job is to synthesize Reddit discussion sentiment against Core Equity Intelligence fundamentals into a structured Retail Sentiment Overlay.
 
 CRITICAL INSTRUCTIONS FOR SECTIONS:
 - community_sentiment: Synthesize Reddit comment sentiment into a single clean percentage and descriptor (e.g., '53% Neutral/Bullish' or '80% Overwhelmingly Bullish').
-- community_hype: Summarize what topics are being discussed, what the primary narrative is, and how the community views the stock.
-- ground_truth_status: State the company's objective, unhyped position in their industry based on financials and filings.
-- ground_truth_filings_news: Summarize factual highlights from recent SEC filings (10-K, 10-Q, 8-K) and standard news. Be specific about capital expenditures, segment growth, and operational disclosures.
-- events_happenings: Summarize key corporate or industry events, product launches, tech advancements, or macro happenings (such as conflicts, wars, policy changes, or supply chain disruptions) that could materially impact the company or its industry.
-- smart_money_verdict: Provide a concise diagnosis of Smart Money vs. Retail alignment (e.g., 'Bearish Divergence: C-Suite Selling', 'Bullish Insider Accumulation', 'Neutral Insider Flow', or 'No Form 4 Activity'). CRITICAL: If SEC Form 4 insider data is unavailable or has_data is False, you MUST NOT claim 'C-Suite Selling' or 'C-Suite Accumulation'. In that case, output 'No Form 4 Activity' (or 'No Form 4 Filings / Congressional Selling' if only Congressional trades exist).
-- insider_activity_summary: Synthesize SEC Form 4 insider buying/selling volume, net shares, key executive transactions (CEOs/CFOs/Directors), and any Congressional/politician trade disclosures. Explain if insiders are accumulating or dumping into retail hype.
-- reconciliation_risk_score: Choose 'Low', 'Medium', or 'High' based on discrepancy between community hype, ground truth, and insider trading flows.
-- reconciliation_analysis: Reconcile community hype with ground-truth data (filings, news, web searches, and insider selling). Explain if Reddit or Wall Street/Analyst consensus is correct, and highlight any unpriced rewards or risks.
-- reconciliation_actionable_insight: Provide a concrete, trackable metric or event (e.g., 'Track Azure AI revenue growth rates in the upcoming quarterly report').
+- community_hype: Summarize what topics are being discussed, what the primary narrative is, and how the retail community views the stock.
+- reconciliation_actionable_insight: Provide a concrete, trackable metric or catalyst reconciling retail expectations with fundamental reality (e.g., 'Track Azure AI revenue growth rates in the upcoming quarterly report').
 
 CRITICAL INSTRUCTION FOR RECOMMENDATIONS:
 Your default recommendation is "HOLD".
 You may ONLY issue a "BUY" if ALL of the following conditions are met:
 1. Social sentiment is overwhelmingly positive with clear catalysts discussed.
-2. Recent news, SEC filings, and web searches are highly favorable, showing strong business health and growth.
+2. Recent news, SEC filings, and Core Intel fundamentals confirm strong business health and growth.
 3. Market metrics indicate strong growth potential without extreme overvaluation, indicating a clear unpriced reward.
-4. SEC Form 4 disclosures DO NOT show heavy net insider selling or aggressive C-suite liquidation into the rally. If corporate insiders are heavily selling shares, you MUST NOT issue a BUY.
 
 You may ONLY issue a "SELL" if ALL of the following conditions are met:
-1. Social sentiment is overwhelmingly negative or fearful, OR insiders are aggressively liquidating while fundamentals deteriorate.
+1. Social sentiment is overwhelmingly negative or fearful while fundamentals deteriorate.
 2. Recent news, SEC filings, and web searches indicate fundamental business issues, revenue declines, or severe macroeconomic headwinds.
 
 If there is any ambiguity, mixed signals, or lack of data, you MUST output "HOLD".
@@ -54,7 +47,7 @@ if not os.getenv("GEMINI_API_KEY"):
 
 analyzer_agent = Agent(
     'google:gemini-4-argon',
-    output_type=StockReport,
+    output_type=RetailOverlayAnalysis,
     system_prompt=SYSTEM_PROMPT
 )
 
@@ -71,82 +64,47 @@ async def generate_stock_report(
     reddit_context: str,
     sec_filings: str,
     web_search_news: str,
-    insider_data: dict | None = None,
-    congressional_trades: list | None = None
-) -> StockReport:
+    core_intel_summary: str = "",
+) -> RetailOverlayAnalysis:
     """
-    Calls the LLM to generate a stock report based on the provided context including SEC filings,
-    web search news, SEC Form 4 insider transactions, and Congressional disclosures.
+    Calls the LLM to generate Engine 1's pure Retail Sentiment Overlay based on Reddit social discussions
+    grounded by Core Equity Intelligence metrics, SEC filings, and news.
     """
-    logger.info(f"Generating report for {ticker} using Pydantic AI")
-    
-    insider_text = "No SEC Form 4 insider transaction filings recorded for this ticker (has_data: False)."
-    if insider_data and insider_data.get("has_data"):
-        txs = insider_data.get("recent_transactions", [])
-        tx_lines = [
-            f"- {tx['date']} | {tx['insider']} ({tx['position']}) | {tx['type']} {tx['shares']:,} shares (~${tx['value']:,}) | {tx['text']}"
-            for tx in txs[:5]
-        ]
-        insider_text = f"""
-- Sentiment: {insider_data.get('sentiment_label')}
-- Purchases (6m): {insider_data.get('purchases_shares'):,.0f} shares ({insider_data.get('purchases_trans')} transactions)
-- Sales (6m): {insider_data.get('sales_shares'):,.0f} shares ({insider_data.get('sales_trans')} transactions)
-- Net Shares (6m): {insider_data.get('net_shares'):,.0f} shares
-- Recent Form 4 Filings:
-""" + "\n".join(tx_lines)
-
-    congressional_text = "No recent Congressional trading reports found."
-    if congressional_trades:
-        congressional_text = "\n".join([
-            f"- {c.get('title')} ({c.get('link')}): {c.get('snippet')}"
-            for c in congressional_trades
-        ])
+    logger.info(f"Generating Engine 1 Retail Overlay report for {ticker} using Pydantic AI")
 
     prompt = f"""
     Analyze the following data for {ticker}:
-    
+
+    === CORE EQUITY INTEL SUMMARY ===
+    {core_intel_summary or 'Evaluate against raw market metrics and SEC filings below.'}
+
     === MARKET METRICS ===
     {market_metrics}
-    
+
     === RECENT NEWS ===
     {recent_news}
-    
+
     === SEC FILINGS ===
     {sec_filings}
-    
+
     === WEB SEARCH NEWS ===
     {web_search_news}
-    
-    === SMART MONEY & INSIDER TRADING (SEC FORM 4) ===
-    {insider_text}
-    
-    === CONGRESSIONAL & SENATE DISCLOSURES ===
-    {congressional_text}
-    
+
     === REDDIT CONTEXT ===
     {reddit_context}
     """
-    
+
     try:
-            
         result = await analyzer_agent.run(prompt)
         return result.output
     except Exception as e:
-        logger.error(f"Error generating report for {ticker}: {e}")
-        # Return a fallback HOLD report
-        return StockReport(
+        logger.error(f"Error generating Engine 1 retail overlay for {ticker}: {e}")
+        return RetailOverlayAnalysis(
             community_sentiment="Error",
             community_hype="Error fetching data.",
-            ground_truth_status="Error fetching data.",
-            ground_truth_filings_news="Error fetching data.",
-            events_happenings="Error fetching data.",
-            smart_money_verdict="Error fetching data.",
-            insider_activity_summary="Error fetching data.",
-            reconciliation_risk_score="Medium",
-            reconciliation_analysis=f"Failed to analyze due to error: {e}",
             reconciliation_actionable_insight="Verify network connectivity and API keys.",
             recommendation="HOLD",
-            recommendation_rationale=f"Failed to analyze due to error: {e}"
+            recommendation_rationale=f"Failed to analyze due to error: {e}",
         )
 
 async def generate_trajectory_analysis(ticker: str, historical_reports: list[dict]) -> TrajectoryAnalysis:

@@ -23,23 +23,26 @@ from app.models import (
     PortfolioPosition,
     PortfolioSnapshot,
 )
-from app.llm_schemas import StockReport, TrajectoryAnalysis
+from app.llm_schemas import RetailOverlayAnalysis, TrajectoryAnalysis
+from app.reddit_scraper import get_target_subreddits
 
 
 async def save_retail_social_raw(db: AsyncSession, raw_social_items: list[dict]):
     """Save raw social signals and Reddit discussions to retail_social_raw."""
-    for item in raw_social_items:
+    default_subreddits = ", ".join(get_target_subreddits())
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    for idx, item in enumerate(raw_social_items, start=1):
         sym = item["ticker"].upper()
         raw_social = RetailSocialRaw(
             ticker=sym,
             platform=item.get("platform", "reddit"),
-            post_id=item.get("post_id"),
-            subreddit=item.get("subreddit", "wallstreetbets,stocks"),
+            post_id=item.get("post_id") or f"rank_{idx}_{today_str}",
+            subreddit=item.get("subreddit") or default_subreddits,
             title=item.get("title") or item.get("post_title") or f"Reddit discussions for {sym}",
-            author=item.get("author"),
+            author=item.get("author") or "reddit_community",
             score=int(item.get("score") or item.get("engagement_score") or 0),
             comment_count=int(item.get("comment_count") or item.get("mention_count") or 0),
-            post_url=item.get("post_url"),
+            post_url=item.get("post_url") or f"https://www.reddit.com/search/?q={sym}",
             post_body=item.get("post_body") or item.get("context_text"),
         )
         db.add(raw_social)
@@ -68,17 +71,24 @@ async def save_daily_tickers(db: AsyncSession, tickers: list[dict]) -> list[Dail
 # ==========================================
 
 async def save_core_equity_report(db: AsyncSession, intel_data: dict) -> CoreEquityReport:
-    """Save foundational equity intelligence and raw evidence for a ticker."""
+    """Save foundational equity intelligence (CoreEquityRaw for raw blobs + CoreEquityReport for LLM synthesis)."""
     raw_row = CoreEquityRaw(
         ticker=intel_data["ticker"].upper(),
+        company_name=intel_data.get("company_name"),
+        sector=intel_data.get("sector"),
+        industry=intel_data.get("industry"),
+        current_price=intel_data.get("current_price"),
+        target_price=intel_data.get("target_price"),
         raw_metrics=intel_data.get("raw_metrics", {}),
         raw_news=intel_data.get("raw_news", []),
         raw_filings=intel_data.get("raw_filings", []),
     )
     db.add(raw_row)
+    await db.flush()
 
     row = CoreEquityReport(
         ticker=intel_data["ticker"].upper(),
+        core_raw_id=raw_row.id,
         company_name=intel_data.get("company_name"),
         sector=intel_data.get("sector"),
         industry=intel_data.get("industry"),
@@ -90,9 +100,6 @@ async def save_core_equity_report(db: AsyncSession, intel_data: dict) -> CoreEqu
         risk_score=intel_data.get("risk_score"),
         risk_analysis=intel_data.get("risk_analysis"),
         actionable_insight=intel_data.get("actionable_insight"),
-        raw_metrics=intel_data.get("raw_metrics", {}),
-        raw_news=intel_data.get("raw_news", []),
-        raw_filings=intel_data.get("raw_filings", []),
     )
     db.add(row)
     await db.commit()
@@ -154,26 +161,32 @@ async def get_core_equity_report_by_id(db: AsyncSession, intel_id: int) -> CoreE
 async def save_retail_sentiment_report(
     db: AsyncSession,
     ticker: str,
-    report: StockReport,
-    metrics: dict,
-    news: list,
-    insider_data: dict | None = None,
+    report: RetailOverlayAnalysis,
     core_intel_id: int | None = None,
+    daily_ticker_id: int | None = None,
     rank: int | None = None,
     mention_count: int = 0,
-    engagement_score: float = 0.0
+    engagement_score: float = 0.0,
 ) -> RetailSentimentReport:
-    """Save the generated Retail Sentiment Report linked to Core Equity Intel."""
+    """Save Engine 1's pure Retail Sentiment Report linked to CoreEquityReport and DailyTicker."""
+    sym = ticker.upper()
+    if daily_ticker_id is None and (rank is not None or mention_count or engagement_score):
+        dt_row = DailyTicker(
+            ticker=sym,
+            rank=rank,
+            mention_count=mention_count,
+            engagement_score=engagement_score,
+        )
+        db.add(dt_row)
+        await db.flush()
+        daily_ticker_id = dt_row.id
+
     db_report = RetailSentimentReport(
-        ticker=ticker.upper(),
+        ticker=sym,
         core_intel_id=core_intel_id,
-        rank=rank,
-        mention_count=mention_count,
-        engagement_score=engagement_score,
+        daily_ticker_id=daily_ticker_id,
         community_sentiment=report.community_sentiment,
         community_hype=report.community_hype,
-        smart_money_verdict=report.smart_money_verdict,
-        raw_insider_data=insider_data or {},
         reconciliation_actionable_insight=report.reconciliation_actionable_insight,
         recommendation=report.recommendation,
         recommendation_rationale=report.recommendation_rationale,
@@ -212,15 +225,17 @@ async def get_distinct_report_dates(db: AsyncSession) -> list[str]:
 
 async def get_retail_reports_by_date(db: AsyncSession, date_str: str) -> list[RetailSentimentReport]:
     """
-    Fetch all Retail reports generated on a specific date (YYYY-MM-DD).
+    Fetch all Retail reports generated on a specific date (YYYY-MM-DD),
+    ordered by linked DailyTicker.rank ascending then ticker ascending.
     """
     query = (
         select(RetailSentimentReport)
         .where(func.date(RetailSentimentReport.date) == date_str)
-        .order_by(RetailSentimentReport.rank.asc(), RetailSentimentReport.ticker.asc())
     )
     result = await db.execute(query)
-    return list(result.scalars().all())
+    reports = list(result.scalars().all())
+    reports.sort(key=lambda r: (r.rank if r.rank is not None else 999999, r.ticker or ""))
+    return reports
 
 
 async def get_distinct_tracked_tickers(db: AsyncSession) -> list[str]:
@@ -407,10 +422,11 @@ async def get_ticker_history(db: AsyncSession, ticker: str):
         )
 
         smart_verdict = (
-            (retail and retail.smart_money_verdict)
+            (smart and smart.conviction_tier)
             or (synthesis and synthesis.smart_money_flow)
-            or (smart and smart.conviction_tier)
-            or "Neutral"
+            or await get_smart_money_verdict_for_ticker(
+                db, sym, date_str=b["date"].strftime("%Y-%m-%d") if b.get("date") else None
+            )
         )
 
         comm_sentiment = (
@@ -567,23 +583,222 @@ async def save_trajectory_analysis(
 
 
 async def save_insider_trades_raw(db: AsyncSession, trades: list[dict]):
-    """Persist raw Form 4 insider transactions."""
+    """Persist raw Form 4 insider transactions (BUY, SELL, OTHER) with deduplication."""
     for t in trades:
+        sym = str(t.get("ticker", "")).upper()
+        if not sym:
+            continue
+        raw_type = str(t.get("trade_type") or t.get("transaction_type") or "BUY").strip().upper()
+        if raw_type in ("PURCHASE", "P", "P - PURCHASE", "BUY"):
+            norm_type = "BUY"
+        elif "SALE" in raw_type or raw_type in ("S", "SELL"):
+            norm_type = "SELL"
+        else:
+            norm_type = "OTHER"
+
+        insider_name = str(t.get("insider_name") or "Unknown")
+        trade_date = str(t.get("trade_date") or "")
+        shares_val = float(t.get("qty") or t.get("shares") or 0.0)
+
+        existing = (
+            await db.execute(
+                select(InsiderTradesRaw.id).where(
+                    InsiderTradesRaw.ticker == sym,
+                    InsiderTradesRaw.insider_name == insider_name,
+                    InsiderTradesRaw.trade_date == trade_date,
+                    InsiderTradesRaw.transaction_type == norm_type,
+                    InsiderTradesRaw.shares == shares_val,
+                ).limit(1)
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            continue
+
         row = InsiderTradesRaw(
-            ticker=str(t.get("ticker", "")).upper(),
+            ticker=sym,
             filing_date=str(t.get("filing_date") or ""),
-            trade_date=str(t.get("trade_date") or ""),
-            insider_name=str(t.get("insider_name") or "Unknown"),
+            trade_date=trade_date,
+            insider_name=insider_name,
             position=str(t.get("title") or t.get("position") or ""),
-            transaction_type=str(t.get("trade_type") or "Purchase"),
-            shares=float(t.get("qty") or t.get("shares") or 0.0),
+            transaction_type=norm_type,
+            shares=shares_val,
             price=str(t.get("price") or ""),
             total_value=float(t.get("value") or t.get("total_value") or 0.0),
             ownership=str(t.get("delta_own") or t.get("ownership") or ""),
-            filing_details=t.get("company_name"),
+            filing_details=t.get("company_name") or t.get("filing_details"),
         )
         db.add(row)
     await db.commit()
+
+
+async def get_insider_trades_by_ticker(
+    db: AsyncSession,
+    ticker: str,
+    date_str: str | None = None,
+    tx_type: str | None = None,
+    limit: int = 25,
+) -> list[InsiderTradesRaw]:
+    """Fetch Engine 2 raw Form 4 transactions for a ticker."""
+    query = select(InsiderTradesRaw).where(InsiderTradesRaw.ticker == ticker.upper())
+    if date_str:
+        query = query.where(func.date(InsiderTradesRaw.captured_at) <= date_str)
+    if tx_type:
+        query = query.where(InsiderTradesRaw.transaction_type == tx_type.upper())
+    query = query.order_by(desc(InsiderTradesRaw.trade_date), desc(InsiderTradesRaw.id)).limit(limit)
+    res = await db.execute(query)
+    return list(res.scalars().all())
+
+
+async def get_smart_money_verdict_for_ticker(
+    db: AsyncSession,
+    ticker: str,
+    date_str: str | None = None,
+    smart_money_rep: SmartMoneyReport | None = None,
+    synthesis_rec: SynthesisReport | None = None,
+) -> str:
+    """Derive a concise Smart Money / Form 4 insider verdict strictly from Engine 2 & Synthesis data."""
+    sym = ticker.upper()
+    if smart_money_rep is None:
+        smart_money_rep = await get_smart_money_report_by_ticker(db, sym, date_str)
+    if smart_money_rep and smart_money_rep.conviction_tier:
+        return smart_money_rep.conviction_tier
+
+    if synthesis_rec and synthesis_rec.smart_money_flow and synthesis_rec.smart_money_flow != "Neutral":
+        return synthesis_rec.smart_money_flow
+
+    rows = await get_insider_trades_by_ticker(db, sym, date_str=date_str, limit=25)
+    if not rows:
+        return "Neutral"
+
+    buy_val = sum((r.total_value or 0.0) for r in rows if r.transaction_type == "BUY")
+    sell_val = sum((r.total_value or 0.0) for r in rows if r.transaction_type == "SELL")
+    buy_sh = sum((r.shares or 0.0) for r in rows if r.transaction_type == "BUY")
+    sell_sh = sum((r.shares or 0.0) for r in rows if r.transaction_type == "SELL")
+
+    if sell_val > buy_val or (sell_sh > buy_sh and sell_sh > 0):
+        return "Bearish Divergence: C-Suite Selling"
+    if buy_val > sell_val or buy_sh > 0:
+        return "Bullish Accumulation"
+    return "Neutral Insider Flow"
+
+
+async def build_engine2_insider_payload(
+    db: AsyncSession,
+    ticker: str,
+    date_str: str | None = None,
+    smart_money_rep: SmartMoneyReport | None = None,
+    synthesis_rec: SynthesisReport | None = None,
+) -> dict:
+    """
+    Assemble Form 4 outflow ledger, congressional trades, and raw insider summary strictly
+    from Engine 2 raw tables (insider_trades_raw & congress_trades_raw) and SmartMoneyReport.
+    """
+    sym = ticker.upper()
+    insider_rows = await get_insider_trades_by_ticker(db, sym, date_str=date_str, limit=25)
+    congress_rows = await get_congress_trades_by_ticker(db, sym, date_str=date_str, limit=15)
+
+    outflow_ledger = []
+    total_sell_volume = 0.0
+    sellers = []
+    purchases_shares = 0.0
+    purchases_trans = 0
+    sales_shares = 0.0
+    sales_trans = 0
+    recent_transactions = []
+
+    for r in insider_rows:
+        sh = float(r.shares or 0.0)
+        val = float(r.total_value or 0.0)
+        tx_t = (r.transaction_type or "OTHER").upper()
+        if tx_t == "BUY":
+            purchases_shares += sh
+            purchases_trans += 1
+        elif tx_t == "SELL":
+            sales_shares += sh
+            sales_trans += 1
+            total_sell_volume += val
+
+            val_str = f"${val:,.0f}" if val else "-"
+            if val >= 1e6:
+                val_str = f"${val/1e6:.1f}M"
+            elif val >= 1e3:
+                val_str = f"${val/1e3:.0f}k"
+
+            name = r.insider_name or "Executive"
+            pos = r.position or "Officer"
+            seller_desc = f"{name} ({pos})"
+            if seller_desc not in sellers:
+                sellers.append(seller_desc)
+
+            outflow_ledger.append({
+                "date": r.trade_date or r.filing_date,
+                "seller": name,
+                "role": pos,
+                "shares": int(sh) if sh else None,
+                "price": r.price or "-",
+                "value": val_str,
+                "details": r.filing_details or "Open Market Sale",
+            })
+
+        recent_transactions.append({
+            "date": r.trade_date or r.filing_date,
+            "insider": r.insider_name,
+            "position": r.position,
+            "shares": int(sh),
+            "value": int(val),
+            "price": r.price or "-",
+            "type": tx_t,
+            "details": r.filing_details or tx_t,
+            "ownership": r.ownership or "",
+        })
+
+    top_seller_summary = None
+    if sellers:
+        top_seller_summary = ", ".join(sellers[:2])
+        if len(sellers) > 2:
+            top_seller_summary += f" +{len(sellers)-2} others"
+
+    congressional_trades = [
+        {
+            "title": f"{c.politician_name} ({c.chamber or 'Congress'}{' - ' + c.party if c.party else ''}) {c.transaction_type} {c.amount_range}",
+            "link": c.source_url if (c.source_url and c.source_url.startswith("http")) else None,
+            "snippet": c.snippet or f"Trade Date: {c.trade_date} | Disclosed: {c.filing_date or 'N/A'}",
+        }
+        for c in congress_rows
+    ]
+
+    verdict = await get_smart_money_verdict_for_ticker(
+        db, sym, date_str=date_str, smart_money_rep=smart_money_rep, synthesis_rec=synthesis_rec
+    )
+    net_shares = purchases_shares - sales_shares
+
+    summary_text = smart_money_rep.actionable_thesis if smart_money_rep else None
+    if not summary_text and insider_rows:
+        if sales_trans > purchases_trans:
+            summary_text = f"{sales_trans} Form 4 sale(s) totaling {int(sales_shares):,} shares by {top_seller_summary or 'insiders'}."
+        elif purchases_trans > 0:
+            summary_text = f"{purchases_trans} Form 4 purchase(s) totaling {int(purchases_shares):,} shares."
+
+    raw_insider_data = {
+        "has_data": bool(insider_rows or congress_rows or smart_money_rep),
+        "purchases_shares": purchases_shares,
+        "purchases_trans": purchases_trans,
+        "sales_shares": sales_shares,
+        "sales_trans": sales_trans,
+        "net_shares": net_shares,
+        "sentiment_label": verdict,
+        "recent_transactions": recent_transactions,
+        "congressional_trades": congressional_trades,
+        "insider_activity_summary": summary_text,
+    }
+
+    return {
+        "outflow_ledger": outflow_ledger,
+        "total_sell_volume": total_sell_volume,
+        "top_seller_summary": top_seller_summary,
+        "smart_money_verdict": verdict,
+        "raw_insider_data": raw_insider_data,
+    }
 
 
 async def save_congress_trades_raw(db: AsyncSession, trades: list[dict]):
@@ -591,6 +806,7 @@ async def save_congress_trades_raw(db: AsyncSession, trades: list[dict]):
     for t in trades:
         row = CongressTradesRaw(
             ticker=str(t.get("ticker", "")).upper(),
+            filing_date=str(t.get("filing_date") or ""),
             trade_date=str(t.get("trade_date") or ""),
             politician_name=str(t.get("politician") or t.get("politician_name") or "Congressional Member"),
             chamber=t.get("chamber"),
@@ -598,11 +814,24 @@ async def save_congress_trades_raw(db: AsyncSession, trades: list[dict]):
             committee=t.get("committee"),
             transaction_type=str(t.get("transaction_type") or "BUY"),
             amount_range=str(t.get("amount_range") or ""),
-            source_url=str(t.get("source_title") or t.get("source_url") or ""),
+            source_url=str(t.get("source_url") or t.get("source_title") or ""),
             snippet=str(t.get("snippet") or ""),
         )
         db.add(row)
     await db.commit()
+
+
+async def get_congress_trades_by_ticker(
+    db: AsyncSession, ticker: str, date_str: str | None = None, limit: int = 10
+) -> list[CongressTradesRaw]:
+    """Fetch Engine 2 Congressional STOCK Act disclosures for a given ticker."""
+    query = select(CongressTradesRaw).where(CongressTradesRaw.ticker == ticker.upper())
+    if date_str:
+        query = query.where(func.date(CongressTradesRaw.captured_at) == date_str)
+    query = query.order_by(desc(CongressTradesRaw.captured_at), desc(CongressTradesRaw.id)).limit(limit)
+    res = await db.execute(query)
+    return list(res.scalars().all())
+
 
 async def save_smart_money_tickers(db: AsyncSession, scored_candidates: list[dict]) -> list[SmartMoneyTicker]:
     """Save the top ranked smart money tickers from Engine 2."""
@@ -644,33 +873,50 @@ async def get_latest_smart_money_tickers(db: AsyncSession) -> list[SmartMoneyTic
 async def save_smart_money_report(
     db: AsyncSession,
     report_data: dict,
-    core_intel_id: int | None = None
+    core_intel_id: int | None = None,
+    smart_money_ticker_id: int | None = None,
 ) -> SmartMoneyReport:
-    """Save an Engine 2 catalyst intelligence report linked to CoreEquityReport."""
+    """Save an Engine 2 catalyst intelligence report linked to CoreEquityReport and SmartMoneyTicker."""
+    sym = report_data["ticker"].upper()
+    if smart_money_ticker_id is None:
+        existing_tk = (
+            await db.execute(
+                select(SmartMoneyTicker)
+                .where(SmartMoneyTicker.ticker == sym)
+                .order_by(desc(SmartMoneyTicker.date))
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if existing_tk and any(
+            k in report_data for k in ("rank", "conviction_score", "cluster_count", "total_buy_volume", "top_buyer_summary")
+        ):
+            # Create a matching leaderboard row if caller did not pass smart_money_ticker_id explicitly
+            tk_row = SmartMoneyTicker(
+                ticker=sym,
+                rank=report_data.get("rank"),
+                conviction_score=report_data.get("conviction_score", 0.0),
+                insider_score=report_data.get("insider_score", 0.0),
+                political_score=report_data.get("political_score", 0.0),
+                cluster_count=report_data.get("cluster_count", 0),
+                total_buy_volume=report_data.get("total_buy_volume", 0.0),
+                top_buyer_summary=report_data.get("top_buyer_summary", ""),
+            )
+            db.add(tk_row)
+            await db.flush()
+            smart_money_ticker_id = tk_row.id
+        elif existing_tk:
+            smart_money_ticker_id = existing_tk.id
+
     row = SmartMoneyReport(
-        ticker=report_data["ticker"].upper(),
+        ticker=sym,
         core_intel_id=core_intel_id,
-        rank=report_data.get("rank"),
-        company_name=report_data.get("company_name", ""),
-        sector=report_data.get("sector", ""),
-        industry=report_data.get("industry", ""),
-        current_price=report_data.get("current_price"),
-        target_price=report_data.get("target_price"),
-        conviction_score=report_data.get("conviction_score", 0.0),
+        smart_money_ticker_id=smart_money_ticker_id,
         conviction_tier=report_data.get("conviction_tier", "High Conviction Catalyst Buy"),
-        cluster_count=report_data.get("cluster_count", 0),
-        total_buy_volume=report_data.get("total_buy_volume", 0.0),
-        top_buyer_summary=report_data.get("top_buyer_summary", ""),
         inflow_ledger=report_data.get("inflow_ledger", []),
         political_catalyst_analysis=report_data.get("political_catalyst_analysis", ""),
         corporate_catalyst_analysis=report_data.get("corporate_catalyst_analysis", ""),
         catalyst_horizon=report_data.get("catalyst_horizon", ""),
         actionable_thesis=report_data.get("actionable_thesis", ""),
-        ground_truth_status=report_data.get("ground_truth_status"),
-        ground_truth_filings_news=report_data.get("ground_truth_filings_news"),
-        events_happenings=report_data.get("events_happenings"),
-        risk_score=report_data.get("risk_score"),
-        raw_metrics=report_data.get("raw_metrics", {})
     )
     db.add(row)
     await db.commit()
@@ -707,14 +953,15 @@ async def get_smart_money_report_by_ticker(
 
 
 async def get_smart_money_reports_by_date(db: AsyncSession, date_str: str) -> list[SmartMoneyReport]:
-    """Fetch all Smart Money reports generated on a specific date (YYYY-MM-DD)."""
+    """Fetch all Smart Money reports generated on a specific date (YYYY-MM-DD), ordered by rank & conviction."""
     query = (
         select(SmartMoneyReport)
         .where(func.date(SmartMoneyReport.date) == date_str)
-        .order_by(SmartMoneyReport.rank.asc(), SmartMoneyReport.conviction_score.desc())
     )
     result = await db.execute(query)
-    return list(result.scalars().all())
+    reports = list(result.scalars().all())
+    reports.sort(key=lambda r: (r.rank if r.rank is not None else 999999, -(r.conviction_score or 0.0)))
+    return reports
 
 
 # ==========================================
@@ -722,26 +969,22 @@ async def get_smart_money_reports_by_date(db: AsyncSession, date_str: str) -> li
 # ==========================================
 
 async def save_synthesis_reports(db: AsyncSession, records: list[dict]) -> list[SynthesisReport]:
-    """Save cross-engine synthesis archetype classifications."""
+    """Save cross-engine synthesis archetype classifications linked via FKs to engine reports."""
     saved = []
     for item in records:
         row = SynthesisReport(
             ticker=item["ticker"].upper(),
             core_intel_id=item.get("core_intel_id"),
+            retail_report_id=item.get("retail_report_id"),
+            smart_money_report_id=item.get("smart_money_report_id"),
+            options_whale_report_id=item.get("options_whale_report_id"),
             archetype=item.get("archetype", "Market Noise"),
-            retail_rank=item.get("retail_rank"),
-            retail_mentions=item.get("retail_mentions", 0),
-            retail_sentiment=item.get("retail_sentiment"),
-            smart_money_rank=item.get("smart_money_rank"),
-            smart_money_conviction=item.get("smart_money_conviction", 0.0),
             smart_money_flow=item.get("smart_money_flow"),
+            whale_options_flow=item.get("whale_options_flow"),
             retail_awareness_level=item.get("retail_awareness_level", "Zero Awareness (Stealth)"),
             timing_edge_score=item.get("timing_edge_score", 0.0),
             synthesis_diagnosis=item.get("synthesis_diagnosis", ""),
             recommended_action=item.get("recommended_action", "PASS"),
-            whale_options_flow=item.get("whale_options_flow"),
-            whale_options_score=item.get("whale_options_score", 0.0),
-            put_call_ratio=item.get("put_call_ratio"),
         )
         db.add(row)
         saved.append(row)
@@ -881,9 +1124,13 @@ async def save_options_whale_report(
     ticker: str,
     whale_data: dict,
     core_intel_id: int | None = None,
+    options_whale_ticker_id: int | None = None,
     rank: int | None = None,
 ) -> OptionsWhaleReport:
-    """Save an individual Engine 3 Options Whale report linked to Core Equity Intel."""
+    """
+    Save an Engine 3 Options Whale report linked to CoreEquityReport and OptionsWhaleTicker,
+    persisting all unusual contracts exclusively in OptionsWhaleRaw.
+    """
     sym = ticker.upper()
     core_intel = None
     if core_intel_id:
@@ -891,40 +1138,30 @@ async def save_options_whale_report(
     if not core_intel:
         core_intel = await get_latest_core_equity_report(db, sym)
 
-    c_name = core_intel.company_name if core_intel else sym
-    sec = core_intel.sector if core_intel else None
-    ind = core_intel.industry if core_intel else None
     curr_p = whale_data.get("current_price") or (core_intel.current_price if core_intel else None)
-    targ_p = core_intel.target_price if core_intel else None
 
-    report = OptionsWhaleReport(
-        ticker=sym,
-        core_intel_id=core_intel.id if core_intel else core_intel_id,
-        company_name=c_name,
-        sector=sec,
-        industry=ind,
-        current_price=curr_p,
-        target_price=targ_p,
-        rank=rank,
-        whale_score=whale_data.get("whale_score", 0.0),
-        unusual_oi_multiplier=whale_data.get("unusual_oi_multiplier", 1.0),
-        put_call_ratio=whale_data.get("put_call_ratio", 1.0),
-        net_bullish_premium=whale_data.get("net_bullish_premium", 0.0),
-        sentiment_bias=whale_data.get("sentiment_bias", "Neutral Tape"),
-        top_strike_summary=whale_data.get("top_strike_summary", ""),
-        unusual_contracts=whale_data.get("unusual_contracts", []),
-        ground_truth_status=core_intel.ground_truth_status if core_intel else "Objective financial evaluation.",
-        ground_truth_filings_news=core_intel.ground_truth_filings_news if core_intel else None,
-        events_happenings=core_intel.events_happenings if core_intel else None,
-        risk_score=core_intel.risk_score if core_intel else "Medium",
-        raw_metrics=core_intel.raw_metrics if core_intel else {},
-    )
+    if options_whale_ticker_id is None:
+        tk_row = OptionsWhaleTicker(
+            ticker=sym,
+            rank=rank,
+            whale_score=whale_data.get("whale_score", 0.0),
+            unusual_oi_multiplier=whale_data.get("unusual_oi_multiplier", 1.0),
+            net_bullish_premium=whale_data.get("net_bullish_premium", 0.0),
+            put_call_ratio=whale_data.get("put_call_ratio", 1.0),
+            top_strike_summary=whale_data.get("top_strike_summary", ""),
+        )
+        db.add(tk_row)
+        await db.flush()
+        options_whale_ticker_id = tk_row.id
+
+    raw_contract_objs: list[OptionsWhaleRaw] = []
     for c in whale_data.get("unusual_contracts", []):
         opt_raw = OptionsWhaleRaw(
             ticker=sym,
             timestamp=str(c.get("timestamp") or datetime.now(timezone.utc).isoformat()),
             strike=float(c.get("strike", 0.0)) if c.get("strike") is not None else None,
-            expiry_date=str(c.get("expiry") or c.get("expiry_date") or ""),
+            expiry_date=str(c.get("expiration") or c.get("expiry") or c.get("expiry_date") or ""),
+            dte=int(c["dte"]) if c.get("dte") is not None else None,
             option_type=str(c.get("type") or c.get("option_type") or "CALL"),
             volume=int(c.get("volume", 0)),
             open_interest=int(c.get("open_interest", 0)),
@@ -932,10 +1169,24 @@ async def save_options_whale_report(
             spot_price=float(c.get("spot") or curr_p or 0.0),
             premium_spent=float(c.get("premium") or c.get("premium_spent", 0.0)),
             sentiment=str(c.get("sentiment") or whale_data.get("sentiment_bias") or ""),
+            is_otm=bool(c["is_otm"]) if c.get("is_otm") is not None else None,
+            is_sweep=bool(c["is_sweep"]) if c.get("is_sweep") is not None else None,
         )
-        db.add(opt_raw)
+        raw_contract_objs.append(opt_raw)
 
+    if raw_contract_objs:
+        db.add_all(raw_contract_objs)
+        await db.flush()
+
+    report = OptionsWhaleReport(
+        ticker=sym,
+        core_intel_id=core_intel.id if core_intel else core_intel_id,
+        options_whale_ticker_id=options_whale_ticker_id,
+        sentiment_bias=whale_data.get("sentiment_bias", "Neutral Tape"),
+        raw_contracts=raw_contract_objs,
+    )
     db.add(report)
+
     await db.commit()
     await db.refresh(report)
     return report
@@ -970,14 +1221,15 @@ async def get_options_whale_report_by_ticker(
 
 
 async def get_options_reports_by_date(db: AsyncSession, date_str: str) -> list[OptionsWhaleReport]:
-    """Retrieve all Options Whale reports for a specific date (YYYY-MM-DD)."""
+    """Retrieve all Options Whale reports for a specific date (YYYY-MM-DD), ordered by rank & whale_score."""
     query = (
         select(OptionsWhaleReport)
         .where(func.date(OptionsWhaleReport.date) == date_str)
-        .order_by(OptionsWhaleReport.rank.asc(), desc(OptionsWhaleReport.whale_score))
     )
     result = await db.execute(query)
-    return list(result.scalars().all())
+    reports = list(result.scalars().all())
+    reports.sort(key=lambda r: (r.rank if r.rank is not None else 999999, -(r.whale_score or 0.0)))
+    return reports
 
 
 # ==========================================

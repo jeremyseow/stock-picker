@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 
 from app.database import Base, get_db
 from app.models import (
+    CoreEquityRaw,
     CoreEquityReport,
     DailyTicker,
     RetailSentimentReport,
@@ -55,9 +56,18 @@ async def app_client():
     # Seed test data across all tables
     async with async_session() as session:
         # Core Intel
+        c1_raw = CoreEquityRaw(
+            ticker="PLTR",
+            captured_at=now,
+            raw_metrics={"pe_ratio": 85.2, "forward_pe": 60.1, "fifty_two_week_high": 45.0, "fifty_two_week_low": 15.0, "market_cap": 95000000000.0},
+        )
+        session.add(c1_raw)
+        await session.flush()
+
         c1 = CoreEquityReport(
             ticker="PLTR",
             date=now,
+            core_raw_id=c1_raw.id,
             company_name="Palantir Technologies Inc.",
             sector="Technology",
             industry="Software - Infrastructure",
@@ -69,23 +79,21 @@ async def app_client():
             risk_score="Medium",
             risk_analysis="High valuation multiple and potential government budget cycles",
             actionable_insight="Track commercial revenue expansion",
-            raw_metrics={"pe_ratio": 85.2, "forward_pe": 60.1, "fifty_two_week_high": 45.0, "fifty_two_week_low": 15.0, "market_cap": 95000000000.0}
         )
         session.add(c1)
         await session.flush()
 
         # Retail report
         dt1 = DailyTicker(ticker="PLTR", mention_count=120, rank=1, engagement_score=100.0, date=now)
-        session.add(dt1)
+        dt0 = DailyTicker(ticker="PLTR", mention_count=15, rank=2, engagement_score=20.0, date=yesterday)
+        session.add_all([dt1, dt0])
         await session.flush()
 
         rr1 = RetailSentimentReport(
             ticker="PLTR",
             date=now,
-            rank=1,
-            mention_count=120,
-            engagement_score=100.0,
             core_intel_id=c1.id,
+            daily_ticker_id=dt1.id,
             community_sentiment="85% Bullish",
             community_hype="AIP enterprise dominance buzz",
             recommendation="BUY",
@@ -95,16 +103,15 @@ async def app_client():
         rr0 = RetailSentimentReport(
             ticker="PLTR",
             date=yesterday,
-            rank=2,
-            mention_count=15,
-            engagement_score=20.0,
             core_intel_id=c1.id,
+            daily_ticker_id=dt0.id,
             community_sentiment="50% Neutral",
             community_hype="Early social mentions",
             recommendation="HOLD",
             recommendation_rationale="Early accumulation phase"
         )
         session.add_all([rr1, rr0])
+        await session.flush()
 
         # Smart money report
         smt1 = SmartMoneyTicker(
@@ -118,17 +125,26 @@ async def app_client():
             total_buy_volume=12500000.0,
             top_buyer_summary="Multiple board directors purchased shares post-earnings"
         )
-        session.add(smt1)
+        smt0 = SmartMoneyTicker(
+            ticker="PLTR",
+            date=yesterday,
+            rank=2,
+            conviction_score=80.0,
+            insider_score=50.0,
+            political_score=30.0,
+            cluster_count=1,
+            total_buy_volume=2000000.0,
+            top_buyer_summary="Single director purchase"
+        )
+        session.add_all([smt1, smt0])
         await session.flush()
 
         smr1 = SmartMoneyReport(
             ticker="PLTR",
             date=now,
             core_intel_id=c1.id,
+            smart_money_ticker_id=smt1.id,
             conviction_tier="Tier-1 Alpha",
-            cluster_count=3,
-            total_buy_volume=12500000.0,
-            top_buyer_summary="Multiple board directors purchased shares post-earnings",
             inflow_ledger=[
                 {"buyer": "Director Alex", "type": "Insider", "volume": 5000000, "date": "2026-10-25"}
             ],
@@ -142,20 +158,28 @@ async def app_client():
             ticker="PLTR",
             date=yesterday,
             core_intel_id=c1.id,
+            smart_money_ticker_id=smt0.id,
             conviction_tier="Moderate Cluster",
-            cluster_count=1,
-            total_buy_volume=2000000.0,
-            top_buyer_summary="Single director purchase",
             inflow_ledger=[],
             catalyst_horizon="6 Months",
             actionable_thesis="Preliminary accumulation"
         )
         session.add_all([smr1, smr0])
+        await session.flush()
 
         # Smart-Money only ticker without retail report (e.g. ACN)
+        c_acn_raw = CoreEquityRaw(
+            ticker="ACN",
+            captured_at=now,
+            raw_metrics={"pe_ratio": 24.5, "forward_pe": 21.0},
+        )
+        session.add(c_acn_raw)
+        await session.flush()
+
         c_acn = CoreEquityReport(
             ticker="ACN",
             date=now,
+            core_raw_id=c_acn_raw.id,
             company_name="Accenture plc",
             sector="Technology",
             industry="IT Services",
@@ -164,19 +188,25 @@ async def app_client():
             ground_truth_status="Strong enterprise cloud consulting backlog",
             risk_score="Low",
             actionable_insight="Track federal AI contracts",
-            raw_metrics={"pe_ratio": 24.5, "forward_pe": 21.0}
         )
-        session.add(c_acn)
+        smt_acn = SmartMoneyTicker(
+            ticker="ACN",
+            date=now,
+            rank=2,
+            conviction_score=82.0,
+            cluster_count=2,
+            total_buy_volume=8000000.0,
+            top_buyer_summary="CFO and VP purchase shares",
+        )
+        session.add_all([c_acn, smt_acn])
         await session.flush()
 
         smr_acn = SmartMoneyReport(
             ticker="ACN",
             date=now,
             core_intel_id=c_acn.id,
+            smart_money_ticker_id=smt_acn.id,
             conviction_tier="Tier-1 Alpha",
-            cluster_count=2,
-            total_buy_volume=8000000.0,
-            top_buyer_summary="CFO and VP purchase shares",
             inflow_ledger=[],
             actionable_thesis="Institutional cluster inflow in consulting"
         )
@@ -187,11 +217,11 @@ async def app_client():
             ticker="PLTR",
             date=now,
             core_intel_id=c1.id,
+            retail_report_id=rr1.id,
+            smart_money_report_id=smr1.id,
             archetype="The Rocket",
             retail_awareness_level="Mainstream Momentum",
             timing_edge_score=8.7,
-            retail_mentions=120,
-            smart_money_conviction=88.5,
             smart_money_flow="Tier-1 Alpha",
             synthesis_diagnosis="Dual engine confirmation: heavy institutional cluster aligning with strong retail momentum.",
             recommended_action="AGGRESSIVE BUY"
@@ -201,11 +231,11 @@ async def app_client():
             ticker="PLTR",
             date=now + timedelta(minutes=5),
             core_intel_id=c1.id,
+            retail_report_id=rr1.id,
+            smart_money_report_id=smr1.id,
             archetype="The Rocket",
             retail_awareness_level="Mainstream Momentum",
             timing_edge_score=8.9,
-            retail_mentions=125,
-            smart_money_conviction=88.5,
             smart_money_flow="Tier-1 Alpha",
             synthesis_diagnosis="Dual engine confirmation: latest run.",
             recommended_action="AGGRESSIVE BUY"
@@ -215,11 +245,11 @@ async def app_client():
             ticker="PLTR",
             date=yesterday,
             core_intel_id=None,
+            retail_report_id=rr0.id,
+            smart_money_report_id=smr0.id,
             archetype="Silent Accumulation",
             retail_awareness_level="Zero Awareness (Stealth)",
             timing_edge_score=9.4,
-            retail_mentions=5,
-            smart_money_conviction=80.0,
             smart_money_flow="Tier-1 Alpha",
             synthesis_diagnosis="Early accumulation detected before retail noticed.",
             recommended_action="BUY"
@@ -292,8 +322,6 @@ async def test_synthesis_deduplication(test_session: AsyncSession):
             archetype="Market Noise",
             timing_edge_score=4.0,
             retail_awareness_level="Mainstream Momentum",
-            retail_mentions=50,
-            smart_money_conviction=0.0,
             smart_money_flow="None",
             synthesis_diagnosis="Run 1",
             recommended_action="PASS"
@@ -304,8 +332,6 @@ async def test_synthesis_deduplication(test_session: AsyncSession):
             archetype="Market Noise",
             timing_edge_score=4.2,
             retail_awareness_level="Mainstream Momentum",
-            retail_mentions=52,
-            smart_money_conviction=0.0,
             smart_money_flow="None",
             synthesis_diagnosis="Run 2",
             recommended_action="PASS"
@@ -316,8 +342,6 @@ async def test_synthesis_deduplication(test_session: AsyncSession):
             archetype="The Rocket",
             timing_edge_score=9.0,
             retail_awareness_level="Mainstream Momentum",
-            retail_mentions=200,
-            smart_money_conviction=85.0,
             smart_money_flow="Tier-1 Alpha",
             synthesis_diagnosis="Run 1",
             recommended_action="BUY"

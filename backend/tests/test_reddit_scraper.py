@@ -191,10 +191,56 @@ async def test_save_retail_social_raw():
         row = result.scalar_one()
         assert row.ticker == "NVDA"
         assert row.title == "Reddit discussions for NVDA"
+        assert "ValueInvesting" in row.subreddit
         assert row.score == 1250
         assert row.comment_count == 14
         assert "Blackwell ramp" in row.post_body
 
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_ranked_tickers_preserve_post_metadata_and_subreddits():
+    from app.ticker_extractor import get_ranked_tickers_with_context
+
+    posts = [
+        {
+            "id": "abc123",
+            "title": "Why $AAPL is undervalued",
+            "selftext": "Deep value thesis on AAPL",
+            "author": "value_investor_99",
+            "score": 450,
+            "num_comments": 62,
+            "subreddit": "ValueInvesting",
+            "permalink": "/r/ValueInvesting/comments/abc123/why_aapl_is_undervalued/",
+            "comments": [
+                {"id": "c1", "body": "Agree on AAPL", "score": 30, "author": "commenter_1"}
+            ],
+        },
+        {
+            "id": "def456",
+            "title": "AAPL weeklies",
+            "selftext": "Watching AAPL calls",
+            "author": "wsb_trader",
+            "score": 100,
+            "num_comments": 15,
+            "subreddit": "wallstreetbets",
+            "permalink": "/r/wallstreetbets/comments/def456/aapl_weeklies/",
+            "comments": [],
+        },
+    ]
+
+    ranked = get_ranked_tickers_with_context(posts, limit=5)
+    assert len(ranked) == 1
+    item = ranked[0]
+    assert item["ticker"] == "AAPL"
+    assert "ValueInvesting" in item["subreddit"]
+    assert "wallstreetbets" in item["subreddit"]
+    assert item["post_id"] == "abc123"
+    assert item["title"] == "Why $AAPL is undervalued"
+    assert item["author"] == "value_investor_99"
+    assert item["post_url"] == "https://www.reddit.com/r/ValueInvesting/comments/abc123/why_aapl_is_undervalued/"
+    assert item["comment_count"] == 62
+
 
 

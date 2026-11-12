@@ -25,26 +25,33 @@ graph TD
         D["yfinance Metrics + SEC 10-Q/8-K"] --> RAW_CORE[("core_equity_raw")]
     end
 
-    subgraph RAW_LAYER["Layer 1: Raw Audit Tables"]
+    subgraph RAW_AND_LEADERBOARDS["Layer 1: Raw Audit & Discovery Leaderboard Tables"]
+        RAW_CORE
         RAW_SOC
+        DT[("daily_tickers")]
         RAW_INS
         RAW_CONG
+        SMT[("smart_money_tickers")]
         RAW_OPT
-        RAW_CORE
+        OWT[("options_whale_tickers")]
     end
 
-    subgraph REPORT_LAYER["Layer 2: Synthesized Reports & Overlays"]
-        RAW_CORE -->|Ground Truth Synthesis| REP_CORE[("core_equity_reports")]
-        RAW_SOC -->|Retail Hype Scoring| REP_RET[("retail_sentiment_reports")]
-        REP_CORE --> REP_RET
-        RAW_INS -->|Inflow Cluster Scoring| REP_SM[("smart_money_reports")]
+    subgraph REPORT_LAYER["Layer 2: Single-Owner Normalized Reports & Synthesis"]
+        RAW_CORE -->|core_raw_id| REP_CORE[("core_equity_reports")]
+        RAW_SOC -->|Retail Overlay Only| REP_RET[("retail_sentiment_reports")]
+        DT -->|daily_ticker_id| REP_RET
+        REP_CORE -->|core_intel_id| REP_RET
+        RAW_INS -->|Engine 2 BUY+SELL Flows| REP_SM[("smart_money_reports")]
         RAW_CONG --> REP_SM
-        REP_CORE --> REP_SM
-        RAW_OPT -->|Volume/OI & Call Sweeps| REP_OPT[("options_whale_reports")]
-        REP_CORE --> REP_OPT
-        REP_RET -->|3-Way Cross-Engine Correlator| REP_SYN[("synthesis_reports")]
-        REP_SM --> REP_SYN
-        REP_OPT --> REP_SYN
+        SMT -->|smart_money_ticker_id| REP_SM
+        REP_CORE -->|core_intel_id| REP_SM
+        OWT -->|options_whale_ticker_id| REP_OPT[("options_whale_reports")]
+        REP_OPT -->|options_report_contracts| RAW_OPT
+        REP_CORE -->|core_intel_id| REP_OPT
+        REP_CORE -->|core_intel_id| REP_SYN[("synthesis_reports")]
+        REP_RET -->|retail_report_id| REP_SYN
+        REP_SM -->|smart_money_report_id| REP_SYN
+        REP_OPT -->|options_whale_report_id| REP_SYN
     end
 
     subgraph CALIB["Model Calibration & Backtesting"]
@@ -97,10 +104,10 @@ stock-picker/
 │   │   ├── core_intel_engine.py     # Decoupled Core Equity Intelligence researcher & 6-hr cache
 │   │   ├── crud.py                  # Async SQLAlchemy CRUD operations & multi-table date aggregation
 │   │   ├── database.py              # Engine & async SQLite session management (anchored to backend/stock_analyzer.db)
-│   │   ├── llm_schemas.py           # Pydantic schemas (CoreIntelSynthesis, RetailOverlay, SmartMoneyReport)
+│   │   ├── llm_schemas.py           # Pydantic schemas (CoreIntelSynthesis, RetailOverlayAnalysis, SmartMoneyReport)
 │   │   ├── main.py                  # FastAPI endpoints & Unified Master Report aggregator
-│   │   ├── market_researcher.py     # yfinance & DuckDuckGo metrics, news fetcher, and ticker validator
-│   │   ├── models.py                # Dual-layer SQLAlchemy models: Layer 1 Raw (*_raw) & Layer 2 Reports (*_reports)
+│   │   ├── market_researcher.py     # yfinance & DuckDuckGo metrics, news, and Form 4 parsers
+│   │   ├── models.py                # Single-owner normalized SQLAlchemy models (_raw, *_tickers, _reports, synthesis) + FK property delegates
 │   │   ├── options_pipeline.py      # Engine 3 orchestrator for Institutional Whale Options Radar
 │   │   ├── options_scraper.py       # yfinance option chain scanner for unusual Volume > 2.5x OI & sweeps
 │   │   ├── options_scorer.py        # Whale Conviction Scorer (0-100) & put/call volume skew calculator
@@ -129,9 +136,12 @@ stock-picker/
 │   │   ├── test_portfolio_api.py    # Portfolio REST API integration tests (positions, close, journal, snapshots)
 │   │   ├── test_portfolio_crud.py   # Database CRUD unit tests for portfolio accounts, positions, snapshots
 │   │   ├── test_portfolio_engine.py # Core paper trading logic tests (qualification, fills, exits, manual liquidation)
-│   │   ├── test_smart_money.py      # Form 4 extraction, smart money serialization & guardrails
+│   │   ├── test_reddit_scraper.py     # Reddit OAuth scraper tests
+│   │   ├── test_schema_integrity.py   # Permanent single-owner relational schema, FK, & SQLite parity guardrails
+│   │   ├── test_smart_money.py        # Engine separation, Form 4 extraction & /api/master/report payload tests
 │   │   ├── test_smart_money_political.py # Engine 2 scoring, committee mapping & archetype tests
 │   │   └── test_telegram_notifier.py# Telegram digest formatting & dispatch tests
+│   ├── migrate_relational_schema.py # Idempotent SQLite migration script aligning live DB with normalized FKs
 │   ├── pyproject.toml               # Backend dependencies (managed via uv)
 │   ├── run_pipeline.py              # CLI script to execute full pipeline (Engine 1 + Engine 2 + Engine 3 + Synthesis)
 │   ├── send_test_telegram.py        # CLI tool to test or manually dispatch today's digest
@@ -189,18 +199,18 @@ stock-picker/
 5. **Zero-Dependency Responsive SVG Charting**:
    - *Choice*: Time-series charts are drawn using pure SVG and Tailwind CSS within React.
    - *Trade-off*: Zero external charting dependencies, no React 19 / Next.js 15 bundle conflicts, and native dark-theme styling.
-6. **Zero-Cost Smart Money & Insider Radar**:
-   - *Choice*: Leverages OpenInsider scraping, native `yfinance` Form 4 transactions, and targeted DuckDuckGo political disclosure queries.
-   - *Trade-off*: Eliminates expensive commercial insider data subscriptions (Bloomberg, Quiver Quant), while enforcing hard LLM guardrails (prohibits "BUY" ratings if C-suite executives are liquidating into retail hype).
+6. **Zero-Cost Smart Money & Insider Radar (Strict Engine 2 Ownership)**:
+   - *Choice*: Leverages OpenInsider scraping, native `yfinance` Form 4 transactions (`insider_trades_raw`, tracking both institutional cluster buys and C-suite outflows), and live CapitolTrades SSR STOCK Act filings ingestion (`congress_trades_raw`) with DuckDuckGo search fallback — **exclusively owned by Engine 2**.
+   - *Trade-off*: Keeps Engine 1 (`retail_sentiment_reports`) purely focused on Core Intel + Retail sentiment without storing Form 4 or Congress disclosures, while Unified Master views and Synthesis cross-reference Engine 2 tables directly to flag bearish insider liquidation divergences.
 7. **Automated Telegram Consolidated Digest with Deduplication**:
    - *Choice*: Outbound direct REST calls via `httpx` to Telegram Bot API with hash-based deduplication cache and HTML parse mode.
    - *Trade-off*: Guarantees zero duplicate alerts across rapid invocations while skipping dispatch gracefully when unconfigured.
-8. **Dual-Layer Relational Architecture (`_raw` vs `_reports`)**:
-   - *Choice*: Separates immutable raw evidence tables (`core_equity_raw`, `retail_social_raw`, `insider_trades_raw`, `congress_trades_raw`, `options_whale_raw`) from synthesized intelligence reports (`core_equity_reports`, `retail_sentiment_reports`, `smart_money_reports`, `options_whale_reports`, `synthesis_reports`).
-   - *Trade-off*: Slightly more granular tables, but enables zero data loss, exact auditability of LLM inputs, reusability of raw insider/congress data across future models, and seamless backtesting with zero frontend schema breakage.
-9. **Strictly Normalized Overlays & Cross-Engine Trajectory Unification**:
-   - *Choice*: `core_equity_reports` is the canonical owner of corporate fundamentals, ground truth status, SEC disclosures, and risk profiles. Specialized report overlays (`retail_sentiment_reports`, `smart_money_reports`, `options_whale_reports`) reference `core_intel_id` without duplicating ground truth or raw metric columns. Multi-run trajectory analytics (`/api/analytics/ticker/{ticker}`) unify historical pipeline runs across all discovery engines and cross-engine synthesis states anchored by foundational core equity research records.
-   - *Trade-off*: Requires relational joins and multi-table unification buckets, but guarantees cross-engine historical consistency, prevents data drift across reports, and ensures longitudinal AI meta-analysis has access to all pipeline runs regardless of which engine discovered the ticker.
+8. **Single-Owner Dual-Layer Relational Schema (`_raw`, `*_tickers`, `_reports`)**:
+   - *Choice*: Strictly separates immutable raw audit tables (`core_equity_raw`, `retail_social_raw`, `insider_trades_raw`, `congress_trades_raw`, `options_whale_raw`), ranked discovery leaderboards (`daily_tickers`, `smart_money_tickers`, `options_whale_tickers`), and synthesized report/cross-engine tables (`core_equity_reports`, `retail_sentiment_reports`, `smart_money_reports`, `options_whale_reports`, `options_report_contracts`, `synthesis_reports`) with strict Layer 2 -> Layer 1 / Leaderboard FKs (`core_raw_id`, `daily_ticker_id`, `smart_money_ticker_id`, `options_whale_ticker_id`, `options_report_contracts` junction, `retail_report_id`, `smart_money_report_id`, `options_whale_report_id`) and read-only `@property` delegates.
+   - *Trade-off*: Eliminates raw payload blobs in `_reports`, repeated leaderboard metrics, Layer 1 -> Layer 2 reverse FKs, and cross-engine snapshot copies in `synthesis_reports`; enforced permanently by `backend/tests/test_schema_integrity.py` (which blocks forbidden columns, Layer 1 -> Layer 2 dependencies, silent-discard ORM `__init__` shims, and SQLite column drift).
+9. **Normalized Overlays & Cross-Engine Trajectory Unification**:
+   - *Choice*: `core_equity_reports` is the canonical owner of corporate fundamentals, ground truth status, SEC disclosures, and risk profiles, linking to `core_equity_raw` via `core_raw_id`. Specialized report overlays (`retail_sentiment_reports`, `smart_money_reports`, `options_whale_reports`) reference `core_intel_id` and their respective discovery ticker FKs without duplicating columns. Multi-run trajectory analytics (`/api/analytics/ticker/{ticker}`) unify historical pipeline runs across all discovery engines and cross-engine synthesis states.
+   - *Trade-off*: Requires `selectin` / relational joins cleanly encapsulated in ORM models, guaranteeing cross-engine consistency, zero data drift across tables, and lossless AI meta-analysis.
 
 ---
 

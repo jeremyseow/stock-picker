@@ -10,8 +10,6 @@ from app.market_researcher import (
     fetch_recent_news,
     fetch_sec_filings,
     fetch_web_search_news,
-    fetch_insider_data,
-    fetch_congressional_trades,
     is_valid_ticker,
 )
 from app.agent import generate_stock_report
@@ -20,6 +18,7 @@ from app.crud import (
     save_daily_tickers,
     save_retail_social_raw,
     save_retail_sentiment_report,
+    get_smart_money_verdict_for_ticker,
 )
 from app.telegram_notifier import send_daily_digest
 
@@ -71,17 +70,17 @@ async def run_retail_pipeline():
 
         async with AsyncSessionLocal() as db:
             await save_retail_social_raw(db, top_tickers)
-            await save_daily_tickers(db, top_tickers)
-            
+            saved_daily_tickers = await save_daily_tickers(db, top_tickers)
+
             for idx, item in enumerate(top_tickers):
                 ticker = item["ticker"]
                 logger.info(f"Step 3: Conducting Core Intel research for {ticker}...")
                 core_intel = await research_core_equity_intel(ticker, db=db)
-                
+
                 metrics = core_intel.get("raw_metrics") or fetch_financial_metrics(ticker)
                 news = core_intel.get("raw_news") or fetch_recent_news(ticker)
                 filings = core_intel.get("raw_filings") or fetch_sec_filings(ticker)
-                
+
                 if filings:
                     sec_filings_text = "\n".join([
                         f"- {f['date']} ({f['type']}): {f['title']} (URL: {f['edgarUrl']})"
@@ -89,7 +88,7 @@ async def run_retail_pipeline():
                     ])
                 else:
                     sec_filings_text = "No recent SEC filings found."
-                    
+
                 search_hits = fetch_web_search_news(ticker)
                 if search_hits:
                     web_search_text = "\n".join([
@@ -98,10 +97,12 @@ async def run_retail_pipeline():
                     ])
                 else:
                     web_search_text = "No recent web search news found."
-                
-                # Fetch Form 4 insider transactions & Congressional disclosures
-                insider_data = fetch_insider_data(ticker)
-                congressional_trades = fetch_congressional_trades(ticker)
+
+                core_summary = (
+                    f"Ground Truth: {core_intel.get('ground_truth_status', '')}\n"
+                    f"Risk Score: {core_intel.get('risk_score', 'Medium')} - {core_intel.get('risk_analysis', '')}\n"
+                    f"Key Events: {core_intel.get('events_happenings', '')}"
+                )
 
                 logger.info(f"Step 4: Generating Retail Overlay for {ticker}...")
                 report = await generate_stock_report(
@@ -111,36 +112,28 @@ async def run_retail_pipeline():
                     item["context_text"],
                     sec_filings_text,
                     web_search_text,
-                    insider_data=insider_data,
-                    congressional_trades=congressional_trades
+                    core_intel_summary=core_summary,
                 )
-                
-                logger.info(f"Step 5: Saving {ticker} retail report ({report.recommendation})...")
-                enriched_insider_data = dict(insider_data) if insider_data else {"has_data": False}
-                enriched_insider_data["congressional_trades"] = congressional_trades or []
-                enriched_insider_data["insider_activity_summary"] = report.insider_activity_summary
 
+                logger.info(f"Step 5: Saving {ticker} retail report ({report.recommendation})...")
+                daily_ticker_id = saved_daily_tickers[idx].id if idx < len(saved_daily_tickers) else None
                 await save_retail_sentiment_report(
                     db,
                     ticker,
                     report,
-                    metrics,
-                    news,
-                    insider_data=enriched_insider_data,
                     core_intel_id=core_intel.get("id"),
-                    rank=idx + 1,
-                    mention_count=item.get("mention_count", 0),
-                    engagement_score=item.get("engagement_score", 0.0)
+                    daily_ticker_id=daily_ticker_id,
                 )
 
+                e2_verdict = await get_smart_money_verdict_for_ticker(db, ticker)
                 processed_summaries.append({
                     "rank": idx + 1,
                     "ticker": ticker,
                     "recommendation": report.recommendation,
                     "current_price": metrics.get("current_price"),
                     "target_price": metrics.get("target_price"),
-                    "smart_money_verdict": report.smart_money_verdict,
-                    "actionable_insight": report.reconciliation_actionable_insight
+                    "smart_money_verdict": e2_verdict,
+                    "actionable_insight": report.reconciliation_actionable_insight,
                 })
                 
         logger.info("Step 6: Sending Telegram daily digest...")
