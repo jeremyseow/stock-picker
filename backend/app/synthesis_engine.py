@@ -10,6 +10,7 @@ from app.crud import (
     get_latest_smart_money_report,
     get_latest_options_whale_report,
     get_insider_trades_by_ticker,
+    get_congress_trades_by_ticker,
     save_synthesis_reports,
 )
 from app.models import DailyTicker, RetailSentimentReport, OptionsWhaleTicker
@@ -126,6 +127,11 @@ async def generate_cross_engine_synthesis(db: AsyncSession) -> List[Dict[str, An
             insider_rows and (sell_val > buy_val or (sell_sh > buy_sh and sell_sh > 0))
         )
 
+        # Evaluate Congressional sales
+        congress_rows = await get_congress_trades_by_ticker(db, ticker, limit=15)
+        has_congress_sells = any((c.transaction_type or "").upper() == "SELL" for c in congress_rows)
+        is_distribution = is_insider_selling or has_congress_sells
+
         # Classify Signals
         is_high_retail = mentions >= 10 or e1_data.get("rank") is not None
         is_high_smart_money = conviction >= 20.0 or e2_data.get("cluster_count", 0) >= 2
@@ -133,12 +139,14 @@ async def generate_cross_engine_synthesis(db: AsyncSession) -> List[Dict[str, An
         is_whale_bearish = pc_ratio >= 1.5 and whale_score >= 25.0
 
         # Triangulation Archetype Classification
-        if is_high_retail and (is_insider_selling or is_whale_bearish):
+        if is_high_retail and (is_distribution or is_whale_bearish):
             archetype = "The Retail Trap"
             action = "AVOID/SHORT"
             trap_reasons = []
             if is_insider_selling:
                 trap_reasons.append("insider selling")
+            if has_congress_sells:
+                trap_reasons.append("congressional selling")
             if is_whale_bearish:
                 trap_reasons.append(f"bearish whale put skew (P/C {pc_ratio:.2f})")
             diagnosis = (
@@ -185,7 +193,7 @@ async def generate_cross_engine_synthesis(db: AsyncSession) -> List[Dict[str, An
                 whale_flow_label = "Neutral Options Tape"
 
         flow_label = e2_data.get("buyer_summary") or (
-            "Bearish Divergence: C-Suite Selling" if is_insider_selling else "Neutral"
+            "Bearish Divergence: Insider & Lawmaker Selling" if is_distribution else "Neutral"
         )
 
         synthesis_results.append({

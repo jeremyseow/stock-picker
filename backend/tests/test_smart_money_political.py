@@ -241,15 +241,21 @@ async def test_capitoltrades_html_ingestion_and_fallback():
          patch("app.smart_money_ingestor.is_valid_ticker", return_value=True):
         trades = await fetch_recent_congressional_purchases(limit=10)
 
-    # Should keep only ARE buy, skip N/A treasury and skip sell WBD
-    assert len(trades) == 1
+    # Should keep ARE buy and WBD sell, while skipping N/A treasury note
+    assert len(trades) == 2
     assert trades[0]["ticker"] == "ARE"
     assert trades[0]["politician"] == "Gil Cisneros"
     assert trades[0]["party"] == "Democrat"
     assert trades[0]["chamber"] == "House"
+    assert trades[0]["transaction_type"] == "BUY"
     assert trades[0]["amount_range"] == "$15,001 - $50,000"
     assert trades[0]["trade_date"] == "2026-10-20"
     assert trades[0]["source_url"] == "https://www.capitoltrades.com/trades/20003804117"
+
+    assert trades[1]["ticker"] == "WBD"
+    assert trades[1]["politician"] == "Julie Johnson"
+    assert trades[1]["transaction_type"] == "SELL"
+    assert trades[1]["amount_range"] == "$1,001 - $15,000"
 
     # Now verify DDGS fallback handles (MCD:US) format if HTML fails
     with patch("app.smart_money_ingestor._fetch_capitoltrades_html", side_effect=RuntimeError("network down")), \

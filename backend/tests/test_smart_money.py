@@ -96,6 +96,57 @@ def test_fetch_insider_data_with_mock_yfinance():
     assert data["recent_transactions"][1]["details"] == "Sale"
 
 
+def test_fetch_insider_data_handles_nan_and_missing_values():
+    """Verify fetch_insider_data gracefully handles float NaN, None, and <NA> in yfinance DataFrames."""
+    import numpy as np
+
+    mock_ticker = MagicMock()
+    mock_ticker.insider_purchases = pd.DataFrame([
+        {"Insider Purchases Last 6m": "Purchases", "Shares": 50000.0, "Trans": 3},
+        {"Insider Purchases Last 6m": "Sales", "Shares": np.nan, "Trans": float("nan")},
+        {"Insider Purchases Last 6m": "Net Shares Purchased (Sold)", "Shares": 50000.0, "Trans": pd.NA},
+        {"Insider Purchases Last 6m": "Total Insider Shares Held", "Shares": np.nan, "Trans": None},
+    ])
+    mock_ticker.insider_transactions = pd.DataFrame([
+        {
+            "Start Date": "2026-08-14",
+            "Insider": "Kumar Neil",
+            "Position": "Chief Executive Officer",
+            "Shares": 71217,
+            "Value": np.nan,  # Reproduces BBIO NaN error
+            "Text": None,
+            "Ownership": np.nan,
+        },
+        {
+            "Start Date": pd.NaT,
+            "Insider": np.nan,
+            "Position": np.nan,
+            "Shares": float("nan"),
+            "Value": 100000,
+            "Text": "Purchase at price $10.00",
+            "Ownership": "D",
+        }
+    ])
+
+    with patch("yfinance.Ticker", return_value=mock_ticker):
+        data = fetch_insider_data("BBIO")
+
+    assert data["has_data"] is True
+    assert data["purchases_shares"] == 50000.0
+    assert data["sales_shares"] == 0.0
+    assert len(data["recent_transactions"]) == 2
+    # Row 1 with NaN value
+    assert data["recent_transactions"][0]["shares"] == 71217
+    assert data["recent_transactions"][0]["value"] == 0
+    assert data["recent_transactions"][0]["price"] == "-"
+    assert data["recent_transactions"][0]["ownership"] == "D"
+    # Row 2 with NaT date, NaN insider/shares
+    assert data["recent_transactions"][1]["date"] == "Unknown"
+    assert data["recent_transactions"][1]["insider"] == "Unknown"
+    assert data["recent_transactions"][1]["shares"] == 0
+    assert data["recent_transactions"][1]["value"] == 100000
+
+
 def test_fetch_insider_data_empty_fallback():
     """Verify fallback when yfinance returns empty or None DataFrames."""
     mock_ticker = MagicMock()

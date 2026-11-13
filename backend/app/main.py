@@ -22,7 +22,7 @@ from app.crud import (
     get_smart_money_reports_by_date,
     get_congress_trades_by_ticker,
     get_smart_money_verdict_for_ticker,
-    build_engine2_insider_payload,
+    build_engine2_insider_and_congress_payload,
     get_latest_synthesis_reports,
     get_synthesis_reports_by_date,
     get_synthesis_report_by_ticker,
@@ -263,30 +263,29 @@ async def get_ticker_report(
     target_price = (core_intel and core_intel.target_price) or (retail_rep and retail_rep.target_price) or (smart_money_rep and smart_money_rep.target_price)
     raw_metrics = (core_intel and core_intel.raw_metrics) or (retail_rep and retail_rep.raw_metrics) or (smart_money_rep and smart_money_rep.raw_metrics) or {}
 
-    inflow_ledger = []
-    if smart_money_rep and smart_money_rep.inflow_ledger:
-        for item in smart_money_rep.inflow_ledger:
-            entry = dict(item)
-            if not entry.get("price") or entry.get("price") == "N/A":
-                t_date = entry.get("date")
-                p = get_historical_trade_price(ticker_sym, t_date) if t_date else None
-                if p:
-                    entry["price"] = f"${p:.2f}"
-                elif current_price:
-                    entry["price"] = f"~${current_price:.2f}"
-                else:
-                    entry["price"] = "Market"
-            inflow_ledger.append(entry)
-
-    # Extract Engine 2 outflow/liquidation ledger & raw insider/Congressional summary from Engine 2 tables
-    e2_insider = await build_engine2_insider_payload(
+    # Extract Engine 2 inflow & outflow ledgers & raw insider/Congressional summary from Engine 2 tables
+    e2_insider = await build_engine2_insider_and_congress_payload(
         db, ticker_sym, date_str=date, smart_money_rep=smart_money_rep, synthesis_rec=synthesis_rec
     )
+    inflow_ledger = e2_insider["inflow_ledger"]
     outflow_ledger = e2_insider["outflow_ledger"]
+    total_buy_volume = e2_insider["total_buy_volume"]
     total_sell_volume = e2_insider["total_sell_volume"]
+    top_buyer_summary = e2_insider["top_buyer_summary"]
     top_seller_summary = e2_insider["top_seller_summary"]
     base_insider = e2_insider["raw_insider_data"]
     smart_money_verdict = e2_insider["smart_money_verdict"]
+
+    for entry in inflow_ledger:
+        if not entry.get("price") or entry.get("price") in ("N/A", "-"):
+            t_date = entry.get("date")
+            p = get_historical_trade_price(ticker_sym, t_date) if t_date else None
+            if p:
+                entry["price"] = f"${p:.2f}"
+            elif current_price:
+                entry["price"] = f"~${current_price:.2f}"
+            else:
+                entry["price"] = "Market"
 
     # Calculate potential upside
     potential_upside = None
@@ -333,16 +332,16 @@ async def get_ticker_report(
             "recommendation_rationale": retail_rep.recommendation_rationale if retail_rep else None,
         },
         "smart_money_overlay": {
-            "has_data": smart_money_rep is not None or len(outflow_ledger) > 0,
-            "has_inflow": smart_money_rep is not None and len(inflow_ledger) > 0,
+            "has_data": smart_money_rep is not None or len(inflow_ledger) > 0 or len(outflow_ledger) > 0,
+            "has_inflow": len(inflow_ledger) > 0,
             "has_outflow": len(outflow_ledger) > 0,
             "rank": smart_money_rep.rank if smart_money_rep else None,
             "conviction_score": smart_money_rep.conviction_score if smart_money_rep else 0.0,
-            "conviction_tier": smart_money_rep.conviction_tier if smart_money_rep else ("Heavy Selling" if len(outflow_ledger) > 0 else "No Cluster"),
-            "cluster_count": smart_money_rep.cluster_count if smart_money_rep else 0,
-            "total_buy_volume": smart_money_rep.total_buy_volume if smart_money_rep else 0.0,
+            "conviction_tier": smart_money_rep.conviction_tier if smart_money_rep else ("Institutional Inflow" if len(inflow_ledger) > 0 else ("Heavy Selling" if len(outflow_ledger) > 0 else "No Cluster")),
+            "cluster_count": smart_money_rep.cluster_count if smart_money_rep else len(inflow_ledger),
+            "total_buy_volume": total_buy_volume,
             "total_sell_volume": total_sell_volume,
-            "top_buyer_summary": smart_money_rep.top_buyer_summary if smart_money_rep else None,
+            "top_buyer_summary": top_buyer_summary,
             "top_seller_summary": top_seller_summary,
             "inflow_ledger": inflow_ledger,
             "outflow_ledger": outflow_ledger,
@@ -664,24 +663,28 @@ async def get_smart_money_report_detail(
     if not core_intel:
         core_intel = await get_core_equity_report_by_ticker(db, ticker_sym, date)
 
-    inflow_ledger = []
-    for item in (rep.inflow_ledger or []):
-        entry = dict(item)
-        if not entry.get("price") or entry.get("price") == "N/A":
+    # Extract Engine 2 inflow ledger and raw insider summary from Engine 2 tables
+    e2_insider = await build_engine2_insider_and_congress_payload(
+        db, ticker_sym, date_str=date, smart_money_rep=rep
+    )
+    inflow_ledger = e2_insider["inflow_ledger"]
+
+    current_price = (core_intel and core_intel.current_price) or rep.current_price
+
+    for entry in inflow_ledger:
+        if not entry.get("price") or entry.get("price") in ("N/A", "-"):
             t_date = entry.get("date")
             p = get_historical_trade_price(rep.ticker, t_date) if t_date else None
             if p:
                 entry["price"] = f"${p:.2f}"
-            elif rep.current_price:
-                entry["price"] = f"~${rep.current_price:.2f}"
+            elif current_price:
+                entry["price"] = f"~${current_price:.2f}"
             else:
                 entry["price"] = "Market"
-        inflow_ledger.append(entry)
 
     company_name = (core_intel and core_intel.company_name) or rep.company_name
     sector = (core_intel and core_intel.sector) or rep.sector
     industry = (core_intel and core_intel.industry) or rep.industry
-    current_price = (core_intel and core_intel.current_price) or rep.current_price
     target_price = (core_intel and core_intel.target_price) or rep.target_price
     raw_metrics = (core_intel and core_intel.raw_metrics) or rep.raw_metrics or {}
     ground_truth_status = (core_intel and core_intel.ground_truth_status) or rep.ground_truth_status or "Verified"
@@ -698,10 +701,15 @@ async def get_smart_money_report_detail(
         "target_price": target_price,
         "conviction_score": rep.conviction_score,
         "conviction_tier": rep.conviction_tier,
-        "cluster_count": rep.cluster_count,
-        "total_buy_volume": rep.total_buy_volume,
-        "top_buyer_summary": rep.top_buyer_summary,
+        "cluster_count": max(rep.cluster_count or 0, len(inflow_ledger)),
+        "total_buy_volume": e2_insider["total_buy_volume"] or rep.total_buy_volume,
+        "top_buyer_summary": e2_insider["top_buyer_summary"] or rep.top_buyer_summary,
+        "total_sell_volume": e2_insider["total_sell_volume"],
+        "top_seller_summary": e2_insider["top_seller_summary"],
+        "has_inflow": len(inflow_ledger) > 0,
+        "has_outflow": len(e2_insider["outflow_ledger"]) > 0,
         "inflow_ledger": inflow_ledger,
+        "outflow_ledger": e2_insider["outflow_ledger"],
         "political_catalyst_analysis": rep.political_catalyst_analysis,
         "corporate_catalyst_analysis": rep.corporate_catalyst_analysis,
         "catalyst_horizon": rep.catalyst_horizon,

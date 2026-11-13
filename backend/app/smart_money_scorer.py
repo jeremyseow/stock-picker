@@ -98,6 +98,8 @@ def score_congressional_trades(trades: List[Dict[str, Any]]) -> Dict[str, Dict[s
         details = []
 
         for t in t_list:
+            if str(t.get("transaction_type", "BUY")).upper() != "BUY":
+                continue
             amt = t.get("amount_range", "")
             base = 10.0
             if any(k in amt for k in ["$250k", "$500k", "$1M", "$1,000,000", "$500,001"]):

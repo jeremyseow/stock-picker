@@ -1,6 +1,6 @@
 import os
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
 import yfinance as yf
 from pydantic_ai import Agent
@@ -67,7 +67,10 @@ def search_catalyst_context(ticker: str, sector: str) -> str:
     return "\n".join(results_text) if results_text else "No recent legislative or corporate contract news found."
 
 
-async def research_smart_money_candidate(candidate: Dict[str, Any]) -> Dict[str, Any]:
+async def research_smart_money_candidate(
+    candidate: Dict[str, Any],
+    inflow_ledger: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
     """
     Performs full research and LLM synthesis on a top smart money candidate.
     """
@@ -81,54 +84,71 @@ async def research_smart_money_candidate(candidate: Dict[str, Any]) -> Dict[str,
 
     catalyst_news = search_catalyst_context(ticker, sector)
 
-    # Format inflow ledger
-    ledger = []
-    for it in candidate.get("insider_trades", []):
-        raw_price = it.get("price")
-        if (not raw_price or raw_price <= 0) and it.get("value") and it.get("qty"):
-            try:
-                raw_price = float(it["value"]) / float(it["qty"])
-            except Exception:
-                raw_price = None
+    # Use canonical inflow ledger if provided, otherwise format from candidate trades
+    if inflow_ledger is not None:
+        ledger = inflow_ledger
+    else:
+        ledger = []
+        for it in candidate.get("insider_trades", []):
+            raw_price = it.get("price")
+            if (not raw_price or raw_price <= 0) and it.get("value") and it.get("qty"):
+                try:
+                    raw_price = float(it["value"]) / float(it["qty"])
+                except Exception:
+                    raw_price = None
 
-        if (not raw_price or raw_price <= 0) and it.get("trade_date"):
-            raw_price = get_historical_trade_price(ticker, it["trade_date"])
+            if (not raw_price or raw_price <= 0) and it.get("trade_date"):
+                raw_price = get_historical_trade_price(ticker, it["trade_date"])
 
-        if raw_price and raw_price > 0:
-            price_str = f"${raw_price:.2f}"
-        elif metrics.get("current_price"):
-            price_str = f"~${float(metrics['current_price']):.2f}"
-        else:
-            price_str = "Market"
+            if raw_price and raw_price > 0:
+                price_str = f"${raw_price:.2f}"
+            elif metrics.get("current_price"):
+                price_str = f"~${float(metrics['current_price']):.2f}"
+            else:
+                price_str = "Market"
 
-        ledger.append({
-            "type": "Form 4 Insider",
-            "name": it.get("insider_name"),
-            "role": it.get("title"),
-            "price": price_str,
-            "amount": f"${it.get('value', 0):,.2f}",
-            "date": it.get("trade_date"),
-            "delta_own": f"+{it.get('delta_own', 0)*100:.1f}%" if it.get("delta_own") else "N/A",
-        })
-    for ct in candidate.get("congress_trades", []):
-        t_date = ct.get("trade_date", "")
-        est_price = get_historical_trade_price(ticker, t_date) if t_date else None
-        if est_price:
-            price_str = f"~${est_price:.2f}"
-        elif metrics.get("current_price"):
-            price_str = f"~${float(metrics['current_price']):.2f}"
-        else:
-            price_str = "Bracket Disclosed"
+            ledger.append({
+                "type": "Form 4 Insider",
+                "name": it.get("insider_name") or "Corporate Insider",
+                "role": it.get("title") or "Officer",
+                "committee": None,
+                "price": price_str,
+                "amount": f"${it.get('value', 0):,.2f}",
+                "shares": it.get("qty"),
+                "date": it.get("trade_date"),
+                "delta_own": f"+{it.get('delta_own', 0)*100:.1f}%" if it.get("delta_own") else "N/A",
+            })
+        for ct in candidate.get("congress_trades", []):
+            if str(ct.get("transaction_type", "BUY")).upper() != "BUY":
+                continue
+            t_date = ct.get("trade_date", "")
+            est_price = get_historical_trade_price(ticker, t_date) if t_date else None
+            if est_price:
+                price_str = f"~${est_price:.2f}"
+            elif metrics.get("current_price"):
+                price_str = f"~${float(metrics['current_price']):.2f}"
+            else:
+                price_str = "Bracket Disclosed"
 
-        ledger.append({
-            "type": "Congressional STOCK Act",
-            "name": ct.get("politician", "Member of Congress"),
-            "role": "Congress / Senate",
-            "price": price_str,
-            "amount": ct.get("amount_range", "$15,001 - $50,000"),
-            "date": t_date,
-            "delta_own": "N/A",
-        })
+            politician_name = ct.get("politician", "Member of Congress")
+            amt_range = ct.get("amount_range", "$15,001 - $50,000")
+            chamber = ct.get("chamber") or "House/Senate"
+            party = ct.get("party")
+            party_str = f" ({party})" if party else ""
+            role_desc = f"{chamber}{party_str}"
+            comm = ct.get("committee")
+
+            ledger.append({
+                "type": "Congressional STOCK Act",
+                "name": politician_name,
+                "role": role_desc,
+                "committee": comm,
+                "price": price_str,
+                "amount": amt_range,
+                "shares": None,
+                "date": t_date,
+                "delta_own": "N/A",
+            })
 
     prompt_content = f"""
 Ticker: ${ticker} ({company_name})

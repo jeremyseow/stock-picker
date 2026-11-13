@@ -682,7 +682,7 @@ async def get_smart_money_verdict_for_ticker(
     return "Neutral Insider Flow"
 
 
-async def build_engine2_insider_payload(
+async def build_engine2_insider_and_congress_payload(
     db: AsyncSession,
     ticker: str,
     date_str: str | None = None,
@@ -690,42 +690,77 @@ async def build_engine2_insider_payload(
     synthesis_rec: SynthesisReport | None = None,
 ) -> dict:
     """
-    Assemble Form 4 outflow ledger, congressional trades, and raw insider summary strictly
+    Assemble Form 4 & Congressional inflow and outflow ledgers and raw summary strictly
     from Engine 2 raw tables (insider_trades_raw & congress_trades_raw) and SmartMoneyReport.
+    Both insider executive trades and Congressional STOCK Act disclosures are handled symmetrically.
     """
     sym = ticker.upper()
     insider_rows = await get_insider_trades_by_ticker(db, sym, date_str=date_str, limit=25)
     congress_rows = await get_congress_trades_by_ticker(db, sym, date_str=date_str, limit=15)
 
+    inflow_ledger = []
     outflow_ledger = []
+    total_buy_volume = float(smart_money_rep.total_buy_volume or 0.0) if smart_money_rep else 0.0
     total_sell_volume = 0.0
+    buyers = []
     sellers = []
     purchases_shares = 0.0
     purchases_trans = 0
     sales_shares = 0.0
     sales_trans = 0
     recent_transactions = []
+    seen_inflows = set()
+
+    # Pre-populate from SmartMoneyReport inflow_ledger if available
+    if smart_money_rep and smart_money_rep.inflow_ledger:
+        for item in smart_money_rep.inflow_ledger:
+            entry = dict(item)
+            inflow_ledger.append(entry)
+            b_name = (entry.get("name") or entry.get("buyer") or "").upper()
+            b_date = str(entry.get("date") or "")
+            seen_inflows.add((b_name, b_date))
+            desc = entry.get("name") or entry.get("buyer")
+            if desc and desc not in buyers:
+                buyers.append(desc)
 
     for r in insider_rows:
         sh = float(r.shares or 0.0)
         val = float(r.total_value or 0.0)
         tx_t = (r.transaction_type or "OTHER").upper()
+        name = r.insider_name or "Executive"
+        pos = r.position or "Officer"
+        val_str = f"${val:,.0f}" if val else "-"
+        if val >= 1e6:
+            val_str = f"${val/1e6:.1f}M"
+        elif val >= 1e3:
+            val_str = f"${val/1e3:.0f}k"
+
         if tx_t == "BUY":
             purchases_shares += sh
             purchases_trans += 1
+            total_buy_volume += val
+            buyer_desc = f"{name} ({pos})"
+            if buyer_desc not in buyers:
+                buyers.append(buyer_desc)
+
+            key = (name.upper(), str(r.trade_date or r.filing_date or ""))
+            if key not in seen_inflows:
+                seen_inflows.add(key)
+                inflow_ledger.append({
+                    "date": r.trade_date or r.filing_date,
+                    "name": name,
+                    "role": pos,
+                    "committee": None,
+                    "shares": int(sh) if sh else None,
+                    "price": r.price or "-",
+                    "amount": val_str,
+                    "details": r.filing_details or "Open Market Purchase",
+                    "type": "Form 4 Insider",
+                })
         elif tx_t == "SELL":
             sales_shares += sh
             sales_trans += 1
             total_sell_volume += val
-
-            val_str = f"${val:,.0f}" if val else "-"
-            if val >= 1e6:
-                val_str = f"${val/1e6:.1f}M"
-            elif val >= 1e3:
-                val_str = f"${val/1e3:.0f}k"
-
-            name = r.insider_name or "Executive"
-            pos = r.position or "Officer"
             seller_desc = f"{name} ({pos})"
             if seller_desc not in sellers:
                 sellers.append(seller_desc)
@@ -738,6 +773,7 @@ async def build_engine2_insider_payload(
                 "price": r.price or "-",
                 "value": val_str,
                 "details": r.filing_details or "Open Market Sale",
+                "type": "Form 4 Insider",
             })
 
         recent_transactions.append({
@@ -751,6 +787,64 @@ async def build_engine2_insider_payload(
             "details": r.filing_details or tx_t,
             "ownership": r.ownership or "",
         })
+
+    for c in congress_rows:
+        pol_name = c.politician_name or "Congressional Member"
+        chamber = c.chamber or "Congress"
+        party_str = f" ({c.party})" if c.party else ""
+        role_desc = f"{chamber}{party_str}"
+        if c.committee:
+            role_desc = f"{role_desc} • {c.committee}"
+        tx_type = (c.transaction_type or "").upper()
+
+        if tx_type == "BUY":
+            buyer_desc = f"{pol_name} ({role_desc})"
+            if buyer_desc not in buyers:
+                buyers.append(buyer_desc)
+
+            key = (pol_name.upper(), str(c.trade_date or c.filing_date or ""))
+            if key not in seen_inflows:
+                seen_inflows.add(key)
+                inflow_ledger.append({
+                    "date": c.trade_date or c.filing_date,
+                    "name": pol_name,
+                    "role": role_desc,
+                    "committee": c.committee,
+                    "shares": None,
+                    "price": "-",
+                    "amount": c.amount_range or "Varies",
+                    "details": "Congressional STOCK Act Purchase",
+                    "type": "Congressional STOCK Act",
+                })
+        elif tx_type == "SELL":
+            seller_desc = f"{pol_name} ({role_desc})"
+            if seller_desc not in sellers:
+                sellers.append(seller_desc)
+
+            outflow_ledger.append({
+                "date": c.trade_date or c.filing_date,
+                "seller": pol_name,
+                "role": role_desc,
+                "shares": None,
+                "price": "-",
+                "value": c.amount_range or "Varies",
+                "details": "Congressional STOCK Act Sale",
+                "type": "Congressional STOCK Act",
+            })
+
+    # Sort ledgers by date descending
+    inflow_ledger.sort(key=lambda x: str(x.get("date") or ""), reverse=True)
+    outflow_ledger.sort(key=lambda x: str(x.get("date") or ""), reverse=True)
+
+    top_buyer_summary = smart_money_rep.top_buyer_summary if smart_money_rep and smart_money_rep.top_buyer_summary else None
+    if not top_buyer_summary and buyers:
+        top_buyer_summary = ", ".join(buyers[:2])
+        if len(buyers) > 2:
+            top_buyer_summary += f" +{len(buyers)-2} others"
+    elif top_buyer_summary and buyers:
+        missing = [b for b in buyers if b.split()[0].upper() not in top_buyer_summary.upper()]
+        if missing:
+            top_buyer_summary += f", {', '.join(missing[:2])}"
 
     top_seller_summary = None
     if sellers:
@@ -793,8 +887,11 @@ async def build_engine2_insider_payload(
     }
 
     return {
+        "inflow_ledger": inflow_ledger,
         "outflow_ledger": outflow_ledger,
+        "total_buy_volume": total_buy_volume,
         "total_sell_volume": total_sell_volume,
+        "top_buyer_summary": top_buyer_summary,
         "top_seller_summary": top_seller_summary,
         "smart_money_verdict": verdict,
         "raw_insider_data": raw_insider_data,
@@ -802,18 +899,40 @@ async def build_engine2_insider_payload(
 
 
 async def save_congress_trades_raw(db: AsyncSession, trades: list[dict]):
-    """Persist raw Congressional STOCK Act disclosures."""
+    """Persist raw Congressional STOCK Act disclosures with deduplication."""
     for t in trades:
+        sym = str(t.get("ticker", "")).upper()
+        if not sym:
+            continue
+        pol_name = str(t.get("politician") or t.get("politician_name") or "Congressional Member")
+        trade_date = str(t.get("trade_date") or "")
+        tx_type = str(t.get("transaction_type") or "BUY").upper()
+        amount = str(t.get("amount_range") or "")
+
+        existing = (
+            await db.execute(
+                select(CongressTradesRaw.id).where(
+                    CongressTradesRaw.ticker == sym,
+                    CongressTradesRaw.politician_name == pol_name,
+                    CongressTradesRaw.trade_date == trade_date,
+                    CongressTradesRaw.transaction_type == tx_type,
+                    CongressTradesRaw.amount_range == amount,
+                ).limit(1)
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            continue
+
         row = CongressTradesRaw(
-            ticker=str(t.get("ticker", "")).upper(),
+            ticker=sym,
             filing_date=str(t.get("filing_date") or ""),
-            trade_date=str(t.get("trade_date") or ""),
-            politician_name=str(t.get("politician") or t.get("politician_name") or "Congressional Member"),
+            trade_date=trade_date,
+            politician_name=pol_name,
             chamber=t.get("chamber"),
             party=t.get("party"),
             committee=t.get("committee"),
-            transaction_type=str(t.get("transaction_type") or "BUY"),
-            amount_range=str(t.get("amount_range") or ""),
+            transaction_type=tx_type,
+            amount_range=amount,
             source_url=str(t.get("source_url") or t.get("source_title") or ""),
             snippet=str(t.get("snippet") or ""),
         )
@@ -822,13 +941,13 @@ async def save_congress_trades_raw(db: AsyncSession, trades: list[dict]):
 
 
 async def get_congress_trades_by_ticker(
-    db: AsyncSession, ticker: str, date_str: str | None = None, limit: int = 10
+    db: AsyncSession, ticker: str, date_str: str | None = None, limit: int = 15
 ) -> list[CongressTradesRaw]:
     """Fetch Engine 2 Congressional STOCK Act disclosures for a given ticker."""
     query = select(CongressTradesRaw).where(CongressTradesRaw.ticker == ticker.upper())
     if date_str:
-        query = query.where(func.date(CongressTradesRaw.captured_at) == date_str)
-    query = query.order_by(desc(CongressTradesRaw.captured_at), desc(CongressTradesRaw.id)).limit(limit)
+        query = query.where(func.date(CongressTradesRaw.captured_at) <= date_str)
+    query = query.order_by(desc(CongressTradesRaw.trade_date), desc(CongressTradesRaw.id)).limit(limit)
     res = await db.execute(query)
     return list(res.scalars().all())
 

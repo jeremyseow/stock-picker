@@ -1,6 +1,6 @@
 import re
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 import httpx
 from bs4 import BeautifulSoup
@@ -102,7 +102,8 @@ async def fetch_recent_insider_purchases(limit: int = 50) -> List[Dict[str, Any]
     return trades
 
 
-CAPITOLTRADES_BUY_URL = "https://www.capitoltrades.com/trades?txType=buy&page={page}"
+CAPITOLTRADES_TRADES_URL = "https://www.capitoltrades.com/trades?page={page}"
+CAPITOLTRADES_BUY_URL = CAPITOLTRADES_TRADES_URL
 
 
 def _normalize_capitol_amount(raw_amt: str) -> str:
@@ -144,11 +145,32 @@ def _parse_capitol_date(raw_date: str) -> str:
     return datetime.now().strftime("%Y-%m-%d")
 
 
+async def _fetch_capitol_politician_committees(client: httpx.AsyncClient, pol_href: str, headers: dict) -> Optional[str]:
+    """Fetches official Congressional committees from the lawmaker's CapitolTrades profile."""
+    if not pol_href or not pol_href.startswith("/politicians/"):
+        return None
+    try:
+        url = f"https://www.capitoltrades.com{pol_href}"
+        res = await client.get(url, headers=headers)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.text, "html.parser")
+            for span in soup.find_all("span"):
+                if span.get_text(strip=True) == "Committees":
+                    parent = span.parent
+                    items = [li.get_text(strip=True) for li in parent.find_all("li") if li.get_text(strip=True)]
+                    if items:
+                        return ", ".join(items)
+    except Exception as e:
+        logger.debug(f"Failed to fetch committees for {pol_href}: {e}")
+    return None
+
+
 async def _fetch_capitoltrades_html(limit: int = 25, max_pages: int = 3) -> List[Dict[str, Any]]:
     """Scrapes live STOCK Act purchase filings directly from CapitolTrades SSR HTML."""
     trades: List[Dict[str, Any]] = []
     seen = set()
     valid_cache: Dict[str, bool] = {}
+    committee_cache: Dict[str, Optional[str]] = {}
     headers = {"User-Agent": DEFAULT_USER_AGENT}
 
     async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
@@ -177,6 +199,15 @@ async def _fetch_capitoltrades_html(limit: int = 25, max_pages: int = 3) -> List
                 party = pol_parts[1] if len(pol_parts) > 1 else None
                 chamber = pol_parts[2] if len(pol_parts) > 2 else None
 
+                # Extract committee assignments from lawmaker profile if linked
+                pol_a = cols[0].find("a")
+                pol_href = pol_a.get("href") if pol_a else None
+                committee = None
+                if pol_href and pol_href.startswith("/politicians/"):
+                    if pol_href not in committee_cache:
+                        committee_cache[pol_href] = await _fetch_capitol_politician_committees(client, pol_href, headers)
+                    committee = committee_cache.get(pol_href)
+
                 # Col 1: Issuer Name | TICKER:US
                 issuer_parts = [p.strip() for p in cols[1].get_text(" | ", strip=True).split("|")]
                 company = issuer_parts[0] if issuer_parts else ""
@@ -190,7 +221,7 @@ async def _fetch_capitoltrades_html(limit: int = 25, max_pages: int = 3) -> List
                     continue
 
                 tx_type = cols[6].get_text(strip=True).upper()
-                if tx_type != "BUY":
+                if tx_type not in ["BUY", "SELL"]:
                     continue
 
                 if ticker not in valid_cache:
@@ -207,21 +238,23 @@ async def _fetch_capitoltrades_html(limit: int = 25, max_pages: int = 3) -> List
                 href = detail_link.get("href") if detail_link else ""
                 source_url = f"https://www.capitoltrades.com{href}" if href and href.startswith("/") else "https://www.capitoltrades.com/trades"
 
-                dedup_key = (ticker, politician, trade_date)
+                dedup_key = (ticker, politician, trade_date, tx_type)
                 if dedup_key in seen:
                     continue
                 seen.add(dedup_key)
 
                 meta_desc = ", ".join(x for x in [party, chamber] if x)
                 pol_label = f"{politician} ({meta_desc})" if meta_desc else politician
-                snippet = f"{pol_label} disclosed purchase of {amount_range} in {company} ({ticker}) traded {trade_date}, filed {filing_date}."
+                action_desc = "purchase" if tx_type == "BUY" else "sale"
+                snippet = f"{pol_label} disclosed {action_desc} of {amount_range} in {company} ({ticker}) traded {trade_date}, filed {filing_date}."
 
                 trades.append({
                     "ticker": ticker,
                     "politician": politician,
                     "party": party,
                     "chamber": chamber,
-                    "transaction_type": "BUY",
+                    "committee": committee,
+                    "transaction_type": tx_type,
                     "amount_range": amount_range,
                     "price": price_txt if price_txt and price_txt != "N/A" else None,
                     "trade_date": trade_date,
@@ -238,7 +271,7 @@ async def _fetch_capitoltrades_html(limit: int = 25, max_pages: int = 3) -> List
 async def fetch_recent_congressional_purchases(limit: int = 25) -> List[Dict[str, Any]]:
     """
     Discovers recent Congressional STOCK Act purchases across House and Senate members.
-    Uses live CapitolTrades SSR filings table as primary source, with DDGS web search fallback.
+    Uses live CapitolTrades SSR filings table as primary authoritative source.
     """
     trades: List[Dict[str, Any]] = []
 
@@ -249,12 +282,11 @@ async def fetch_recent_congressional_purchases(limit: int = 25) -> List[Dict[str
             logger.info(f"Ingested {len(trades)} live Congressional STOCK Act trades from CapitolTrades.")
             return trades
     except Exception as e:
-        logger.warning(f"CapitolTrades live scrape failed ({e}), falling back to DDGS search.")
+        logger.error(f"CapitolTrades live scrape failed: {e}")
 
-    # Fallback: DDGS targeted search with broadened ticker regex
+    # Fallback: strict lawmaker regex search, explicitly rejecting aggregator tracker names
     queries = [
         "site:capitoltrades.com/trades purchase disclosure 2026",
-        "congressional stock trades purchase disclosure periodic transaction report filed 2026",
     ]
     seen_fallback = set()
 
@@ -269,7 +301,13 @@ async def fetch_recent_congressional_purchases(limit: int = 25) -> List[Dict[str
                     href = r.get("href", "")
                     text = f"{title} {body}"
 
-                    # Match $NVDA, (MCD:US), (NVDA), or "NVDA stock"
+                    politician_match = re.search(r"(Rep\.|Senator|Sen\.)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)", text)
+                    if not politician_match:
+                        continue
+                    pol_name = politician_match.group(0)
+                    if any(t in pol_name.lower() for t in ["tracker", "feed", "aggregate", "quant"]):
+                        continue
+
                     ticker_matches = re.findall(
                         r"\$([A-Z]{1,5})\b|\(([A-Z]{1,5}):US\)|\(([A-Z]{1,5})\)|\b([A-Z]{2,5})\s+stock\b",
                         text,
@@ -285,18 +323,19 @@ async def fetch_recent_congressional_purchases(limit: int = 25) -> List[Dict[str
                             amount_match = re.search(r"(\$\d+k?\s*[-–]\s*\$?\d+k?|\$\d+[\d,]+)", text, re.I)
                             amount_str = amount_match.group(1) if amount_match else "$15,001 - $50,000"
 
-                            politician_match = re.search(r"(Rep\.|Senator|Sen\.)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)", text)
-                            pol_name = politician_match.group(0) if politician_match else "Congressional Member"
-
                             dedup_key = (t, pol_name, title[:40])
                             if dedup_key in seen_fallback:
                                 continue
                             seen_fallback.add(dedup_key)
 
+                            tx_type = "SELL" if any(w in text.lower() for w in ["sold", "sale", "dumped"]) else "BUY"
                             trades.append({
                                 "ticker": t,
                                 "politician": pol_name,
-                                "transaction_type": "BUY",
+                                "party": None,
+                                "chamber": "Senate" if "sen" in pol_name.lower() else "House",
+                                "committee": None,
+                                "transaction_type": tx_type,
                                 "amount_range": amount_str,
                                 "source_url": href or title,
                                 "snippet": body[:200],
@@ -345,6 +384,7 @@ def fetch_form4_flows_for_tickers(tickers: List[str], limit_per_ticker: int = 8)
                     "price": str(tx.get("price") or ""),
                     "total_value": float(tx.get("value") or 0.0),
                     "ownership": str(tx.get("ownership") or ""),
+                    "filing_details": tx.get("details") or tx.get("text") or "SEC Form 4",
                     "company_name": tx.get("details") or tx.get("text") or "SEC Form 4",
                 })
         except Exception as e:

@@ -1,11 +1,31 @@
 import yfinance as yf
 import logging
+import math
 import re
 import requests
+import pandas as pd
 from ddgs import DDGS
 from app.ticker_extractor import TICKER_ALIASES
 
 logger = logging.getLogger(__name__)
+
+def _safe_float(val, default: float = 0.0) -> float:
+    if val is None or pd.isna(val):
+        return default
+    try:
+        f = float(val)
+        return default if math.isnan(f) else f
+    except (ValueError, TypeError):
+        return default
+
+def _safe_int(val, default: int = 0) -> int:
+    if val is None or pd.isna(val):
+        return default
+    try:
+        f = float(val)
+        return default if math.isnan(f) else int(f)
+    except (ValueError, TypeError):
+        return default
 
 def fetch_financial_metrics(ticker_symbol: str) -> dict:
     """
@@ -181,8 +201,8 @@ def fetch_insider_data(ticker_symbol: str, limit: int = 8) -> dict:
             records = purchases_df.to_dict(orient="records")
             for row in records:
                 label = str(row.get("Insider Purchases Last 6m", "")).strip()
-                shares_val = float(row.get("Shares") or 0.0) if row.get("Shares") is not None else 0.0
-                trans_val = int(row.get("Trans") or 0) if row.get("Trans") is not None and not str(row.get("Trans")).lower() in ["nan", "none", "<na>"] else 0
+                shares_val = _safe_float(row.get("Shares"), 0.0)
+                trans_val = _safe_int(row.get("Trans"), 0)
                 
                 if label == "Purchases":
                     purchases_shares = shares_val
@@ -203,13 +223,22 @@ def fetch_insider_data(ticker_symbol: str, limit: int = 8) -> dict:
             for t in tx_records:
                 # Handle dates and timestamps safely
                 start_date = t.get("Start Date")
-                date_str = str(start_date).split()[0] if start_date is not None else "Unknown"
+                if start_date is not None and not pd.isna(start_date):
+                    date_str = str(start_date).split()[0]
+                    if date_str.lower() in ("nat", "nan", "none"):
+                        date_str = "Unknown"
+                else:
+                    date_str = "Unknown"
                 
-                shares = int(t.get("Shares") or 0) if t.get("Shares") is not None else 0
-                value = int(t.get("Value") or 0) if t.get("Value") is not None else 0
-                text = str(t.get("Text") or "")
-                insider_name = str(t.get("Insider") or "Unknown")
-                position = str(t.get("Position") or "Insider")
+                shares = _safe_int(t.get("Shares"), 0)
+                value = _safe_int(t.get("Value"), 0)
+                text = str(t.get("Text") or "") if not pd.isna(t.get("Text")) else ""
+                insider_raw = t.get("Insider")
+                insider_name = str(insider_raw) if insider_raw is not None and not pd.isna(insider_raw) else "Unknown"
+                position_raw = t.get("Position")
+                position = str(position_raw) if position_raw is not None and not pd.isna(position_raw) else "Insider"
+                ownership_raw = t.get("Ownership")
+                ownership = str(ownership_raw) if ownership_raw is not None and not pd.isna(ownership_raw) else "D"
                 
                 # Determine transaction type
                 tx_type = "SELL" if "sale" in text.lower() else ("BUY" if "purchase" in text.lower() else "OTHER")
@@ -243,7 +272,7 @@ def fetch_insider_data(ticker_symbol: str, limit: int = 8) -> dict:
                     "details": cleaned_details,
                     "text": text,
                     "type": tx_type,
-                    "ownership": str(t.get("Ownership") or "D")
+                    "ownership": ownership
                 })
 
         has_data = bool(purchases_shares > 0 or sales_shares > 0 or formatted_tx)

@@ -11,10 +11,22 @@ interface InflowEntry {
   type: string;
   name: string;
   role: string;
+  committee?: string | null;
   price?: string;
   amount: string;
   date: string;
-  delta_own: string;
+  delta_own?: string | null;
+}
+
+interface OutflowEntry {
+  type?: string;
+  seller: string;
+  role: string;
+  shares?: number | null;
+  price?: string;
+  value: string;
+  date: string;
+  details?: string;
 }
 
 interface CoreIntelFacet {
@@ -47,7 +59,13 @@ interface SmartMoneyReportDetail {
   conviction_tier: string;
   cluster_count?: number;
   total_buy_volume?: number;
+  total_sell_volume?: number;
+  top_buyer_summary?: string;
+  top_seller_summary?: string;
+  has_inflow?: boolean;
+  has_outflow?: boolean;
   inflow_ledger: InflowEntry[];
+  outflow_ledger?: OutflowEntry[];
   political_catalyst_analysis: string;
   corporate_catalyst_analysis: string;
   catalyst_horizon: string;
@@ -64,6 +82,7 @@ function SmartMoneyDetailContent() {
   const ticker = (params.ticker as string)?.toUpperCase();
   const reportDate = searchParams.get("date");
   const [report, setReport] = useState<SmartMoneyReportDetail | null>(null);
+  const [flowTab, setFlowTab] = useState<"inflow" | "outflow">("inflow");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -99,6 +118,11 @@ function SmartMoneyDetailContent() {
       })
       .then((data) => {
         setReport(data);
+        if (!data.has_inflow && data.has_outflow) {
+          setFlowTab("outflow");
+        } else {
+          setFlowTab("inflow");
+        }
         setLoading(false);
       })
       .catch((err) => {
@@ -306,45 +330,205 @@ function SmartMoneyDetailContent() {
               );
             })()}
 
-            {/* Inflow Ledger */}
-            <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-6 sm:p-8 backdrop-blur-sm">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                  <span>🏛️</span> Smart Money Inflow Ledger
-                </h2>
-                <span className="text-xs text-slate-500">
-                  {report.inflow_ledger?.length || 0} recorded filings
-                </span>
+            {/* Section 2: Capital Flows (Inflow & Outflow Tabbed) */}
+            <div className="space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg font-bold text-white flex items-center gap-2">
+                    <span>🏛️</span> Institutional & Congressional Capital Flow
+                  </span>
+                </div>
+
+                {/* Tab Switcher */}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setFlowTab("inflow")}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                      flowTab === "inflow"
+                        ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm"
+                        : "bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800"
+                    }`}
+                  >
+                    <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                    <span>Insider & Congress Inflow (Buys)</span>
+                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-950 text-emerald-400 font-mono">
+                      {report.inflow_ledger?.length || 0}
+                    </span>
+                  </button>
+
+                  {report.has_outflow && (
+                    <button
+                      onClick={() => setFlowTab("outflow")}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                        flowTab === "outflow"
+                          ? "bg-rose-500/20 text-rose-300 border border-rose-500/40 shadow-sm"
+                          : "bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800"
+                      }`}
+                    >
+                      <span className="w-2 h-2 rounded-full bg-rose-400" />
+                      <span>Insider & Congress Outflow (Sells)</span>
+                      <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-rose-950 text-rose-400 font-mono">
+                        {report.outflow_ledger?.length || 0}
+                      </span>
+                    </button>
+                  )}
+                </div>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="border-b border-slate-800/80 text-slate-400 font-semibold">
-                      <th className="py-2.5 px-3">Type</th>
-                      <th className="py-2.5 px-3">Buyer / Politician</th>
-                      <th className="py-2.5 px-3">Role / Chamber</th>
-                      <th className="py-2.5 px-3">Price at Trade</th>
-                      <th className="py-2.5 px-3">Transaction Value</th>
-                      <th className="py-2.5 px-3">Date</th>
-                      <th className="py-2.5 px-3">Position Growth</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/40">
-                    {report.inflow_ledger?.map((row, i) => (
-                      <tr key={i} className="hover:bg-slate-800/20 transition-colors">
-                        <td className="py-3 px-3 font-semibold text-slate-300">{row.type}</td>
-                        <td className="py-3 px-3 font-bold text-white">{row.name}</td>
-                        <td className="py-3 px-3 text-slate-400">{row.role}</td>
-                        <td className="py-3 px-3 font-bold text-slate-200">{row.price && row.price !== "N/A" ? row.price : (report.current_price ? `~$${report.current_price.toFixed(2)}` : "Market")}</td>
-                        <td className="py-3 px-3 font-extrabold text-emerald-400">{row.amount}</td>
-                        <td className="py-3 px-3 text-slate-400">{row.date}</td>
-                        <td className="py-3 px-3 text-indigo-400 font-medium">{row.delta_own}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              {/* Inflow View */}
+              {flowTab === "inflow" && (
+                <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-6 sm:p-8 backdrop-blur-sm">
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                      <span>🟢</span> Smart Money Inflow Ledger
+                    </h2>
+                    <span className="text-xs text-slate-500">
+                      {report.inflow_ledger?.length || 0} recorded filings
+                    </span>
+                  </div>
+
+                  {report.inflow_ledger && report.inflow_ledger.length > 0 ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="border-b border-slate-800/80 text-slate-400 font-semibold">
+                            <th className="py-2.5 px-3">Type</th>
+                            <th className="py-2.5 px-3">Buyer / Politician</th>
+                            <th className="py-2.5 px-3">Role / Chamber</th>
+                            <th className="py-2.5 px-3">Committee</th>
+                            <th className="py-2.5 px-3">Price at Trade</th>
+                            <th className="py-2.5 px-3">Transaction Value</th>
+                            <th className="py-2.5 px-3">Date</th>
+                            <th className="py-2.5 px-3">Position Growth</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800/40">
+                          {report.inflow_ledger.map((row, i) => {
+                            const isCongress = row.type?.toLowerCase().includes("congress") || row.role?.toLowerCase().includes("house") || row.role?.toLowerCase().includes("senate");
+                            return (
+                              <tr key={i} className="hover:bg-slate-800/20 transition-colors">
+                                <td className="py-3 px-3 font-semibold text-slate-300">
+                                  {isCongress ? (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30 font-medium">
+                                      🏛️ Congress
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-medium">
+                                      👔 Insider
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="py-3 px-3 font-bold text-white">{row.name}</td>
+                                <td className="py-3 px-3 text-slate-400">{row.role}</td>
+                                <td className="py-3 px-3 text-slate-300">{row.committee || "-"}</td>
+                                <td className="py-3 px-3 font-bold text-slate-200">
+                                  {row.price && row.price !== "N/A" ? row.price : (report.current_price ? `~$${report.current_price.toFixed(2)}` : "Market")}
+                                </td>
+                                <td className="py-3 px-3 font-extrabold text-emerald-400">{row.amount}</td>
+                                <td className="py-3 px-3 text-slate-400">{row.date}</td>
+                                <td className="py-3 px-3 text-indigo-400 font-medium">{row.delta_own || "N/A"}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="py-8 text-center text-xs text-slate-500">
+                      No active open-market insider or Congressional purchases recorded.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Outflow View */}
+              {flowTab === "outflow" && report.has_outflow && report.outflow_ledger && (
+                <div className="bg-slate-900/40 border border-rose-900/40 rounded-2xl p-6 sm:p-8 backdrop-blur-sm space-y-6">
+                  {/* Outflow Alert Banner */}
+                  <div className="p-4 rounded-xl bg-rose-950/30 border border-rose-800/40 flex items-start gap-3">
+                    <span className="text-xl shrink-0 mt-0.5">⚠️</span>
+                    <div className="space-y-1">
+                      <span className="text-xs font-bold text-rose-300 uppercase tracking-wider block">
+                        Insider & Lawmaker Liquidation Warning (Bearish Divergence)
+                      </span>
+                      <p className="text-xs text-slate-300 leading-relaxed font-sans">
+                        Corporate directors, C-suite executives, and members of Congress have executed open-market sales or STOCK Act liquidations. When paired with high retail social euphoria, this institutional distribution strongly indicates that retail dip-buyers are absorbing supply as <strong>exit liquidity</strong>.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Summary Cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                    <div className="bg-slate-950/60 border border-slate-800 p-3.5 rounded-xl">
+                      <span className="text-[10px] text-slate-500 uppercase font-black block mb-1">Selling Insiders & Lawmakers</span>
+                      <span className="text-xs font-semibold text-rose-200">
+                        {report.top_seller_summary || "Multiple corporate insiders & lawmakers"}
+                      </span>
+                    </div>
+                    <div className="bg-slate-950/60 border border-slate-800 p-3.5 rounded-xl">
+                      <span className="text-[10px] text-slate-500 uppercase font-black block mb-1">Total Disclosed Sales</span>
+                      <span className="text-xs font-bold text-rose-400 font-mono">
+                        {report.total_sell_volume && report.total_sell_volume > 0
+                          ? `$${(report.total_sell_volume / 1e6).toFixed(1)}M+ Liquidated`
+                          : `${report.outflow_ledger.length} Sell Filings`}
+                      </span>
+                    </div>
+                    <div className="bg-slate-950/60 border border-slate-800 p-3.5 rounded-xl">
+                      <span className="text-[10px] text-slate-500 uppercase font-black block mb-1">Signal Bias</span>
+                      <span className="text-xs font-bold text-amber-300">
+                        Heavy Institutional Distribution
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Outflow Table */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-800/80 text-slate-400 font-semibold">
+                          <th className="py-2.5 px-3">Type</th>
+                          <th className="py-2.5 px-3">Seller / Politician</th>
+                          <th className="py-2.5 px-3">Role / Title</th>
+                          <th className="py-2.5 px-3">Sale Price Range</th>
+                          <th className="py-2.5 px-3 text-right">Shares Sold</th>
+                          <th className="py-2.5 px-3 text-right">Value Liquidated</th>
+                          <th className="py-2.5 px-3">Filing Date</th>
+                          <th className="py-2.5 px-3">Details</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/40">
+                        {report.outflow_ledger.map((row, i) => {
+                          const isCongress = row.type?.toLowerCase().includes("congress") || row.role?.toLowerCase().includes("house") || row.role?.toLowerCase().includes("senate");
+                          return (
+                            <tr key={i} className="hover:bg-slate-800/20 transition-colors">
+                              <td className="py-3 px-3 font-semibold text-slate-300">
+                                {isCongress ? (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30 font-medium">
+                                    🏛️ Congress
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 font-medium">
+                                    👔 Insider
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-3 px-3 font-bold text-white">{row.seller}</td>
+                              <td className="py-3 px-3 text-slate-400">{row.role}</td>
+                              <td className="py-3 px-3 font-bold text-slate-200">{row.price || "-"}</td>
+                              <td className="py-3 px-3 text-right text-slate-300 font-mono">
+                                {row.shares ? row.shares.toLocaleString() : "-"}
+                              </td>
+                              <td className="py-3 px-3 text-right font-black text-rose-400 font-mono">{row.value}</td>
+                              <td className="py-3 px-3 text-slate-400">{row.date}</td>
+                              <td className="py-3 px-3 text-slate-400">{row.details || "Sale"}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Dual Catalyst Pillars Grid */}

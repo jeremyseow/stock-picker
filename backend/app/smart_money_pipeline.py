@@ -14,6 +14,7 @@ from app.crud import (
     save_smart_money_report,
     save_insider_trades_raw,
     save_congress_trades_raw,
+    build_engine2_insider_and_congress_payload,
 )
 
 logger = logging.getLogger(__name__)
@@ -66,6 +67,7 @@ async def run_smart_money_pipeline(limit: int = 5) -> list[dict]:
                 await save_insider_trades_raw(db, all_insiders)
             if congress:
                 await save_congress_trades_raw(db, congress)
+
             saved_tickers = await save_smart_money_tickers(db, top_candidates)
 
         # Step 4: Research & Report Generation
@@ -76,8 +78,18 @@ async def run_smart_money_pipeline(limit: int = 5) -> list[dict]:
                 logger.info(f"Conducting Core Equity Intel for Smart Money candidate ${ticker}...")
                 core_intel = await research_core_equity_intel(ticker, db=db)
 
+                # Build canonical inflow ledger from raw tables (Form 4 & Congressional)
+                e2_payload = await build_engine2_insider_and_congress_payload(db, ticker)
+                c["inflow_ledger"] = e2_payload["inflow_ledger"]
+                if e2_payload["total_buy_volume"] > 0:
+                    c["total_buy_volume"] = e2_payload["total_buy_volume"]
+                if e2_payload["top_buyer_summary"]:
+                    c["top_buyer_summary"] = e2_payload["top_buyer_summary"]
+                if e2_payload["inflow_ledger"]:
+                    c["cluster_count"] = len(e2_payload["inflow_ledger"])
+
                 logger.info(f"Generating Smart Money Catalyst report for ${ticker}...")
-                report_data = await research_smart_money_candidate(c)
+                report_data = await research_smart_money_candidate(c, inflow_ledger=e2_payload["inflow_ledger"])
                 sm_ticker_id = saved_tickers[idx].id if idx < len(saved_tickers) else None
 
                 await save_smart_money_report(

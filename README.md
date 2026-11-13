@@ -154,7 +154,7 @@ stock-picker/
 │   │   │   ├── retail/[ticker]/     # Retail Momentum Report: Engine 1 signals + Core Intel
 │   │   │   ├── smart-money/         # Smart Money & Gov: Market-wide radar & catalyst reports
 │   │   │   │   ├── page.tsx         # Inflow Feed & ranked candidates
-│   │   │   │   └── [ticker]/page.tsx# Smart Money Catalyst Report: Inflow ledger + Core Intel
+│   │   │   │   └── [ticker]/page.tsx# Smart Money Catalyst Report: Inflow & Outflow ledgers + Core Intel
 │   │   │   ├── synthesis/page.tsx   # Cross-Engine Synthesis Matrix & Retail Awareness Gauge
 │   │   │   ├── stats/page.tsx       # Historical Reports explorer: 3 Dedicated Tabs (Retail, Smart Money, Synthesis)
 │   │   │   ├── analytics/page.tsx   # Multi-run Ticker Analytics, trajectory chart & Archetype Lifecycle
@@ -200,8 +200,8 @@ stock-picker/
    - *Choice*: Time-series charts are drawn using pure SVG and Tailwind CSS within React.
    - *Trade-off*: Zero external charting dependencies, no React 19 / Next.js 15 bundle conflicts, and native dark-theme styling.
 6. **Zero-Cost Smart Money & Insider Radar (Strict Engine 2 Ownership)**:
-   - *Choice*: Leverages OpenInsider scraping, native `yfinance` Form 4 transactions (`insider_trades_raw`, tracking both institutional cluster buys and C-suite outflows), and live CapitolTrades SSR STOCK Act filings ingestion (`congress_trades_raw`) with DuckDuckGo search fallback — **exclusively owned by Engine 2**.
-   - *Trade-off*: Keeps Engine 1 (`retail_sentiment_reports`) purely focused on Core Intel + Retail sentiment without storing Form 4 or Congress disclosures, while Unified Master views and Synthesis cross-reference Engine 2 tables directly to flag bearish insider liquidation divergences.
+   - *Choice*: Leverages OpenInsider scraping, native `yfinance` Form 4 transactions (`insider_trades_raw`, tracking both institutional cluster buys and C-suite outflows), and live CapitolTrades SSR STOCK Act filings ingestion (`congress_trades_raw`, capturing both lawmaker Buys and Sells) — **exclusively owned by Engine 2**.
+   - *Trade-off*: Keeps Engine 1 (`retail_sentiment_reports`) purely focused on Core Intel + Retail sentiment without storing Form 4 or Congress disclosures, while Unified Master views and Synthesis cross-reference Engine 2 tables directly: Buys rank long candidates and populate the Inflow Ledger, while Corporate and Congressional Sells populate the Outflow Ledger and trigger *The Retail Trap* warning.
 7. **Automated Telegram Consolidated Digest with Deduplication**:
    - *Choice*: Outbound direct REST calls via `httpx` to Telegram Bot API with hash-based deduplication cache and HTML parse mode.
    - *Trade-off*: Guarantees zero duplicate alerts across rapid invocations while skipping dispatch gracefully when unconfigured.
@@ -275,7 +275,7 @@ stock-picker/
 | | `/api/retail/trigger` | POST | On-demand trigger for Engine 1 (Retail Momentum) |
 | **Smart Money** | `/api/smart-money/today` | GET | Latest Form 4 & STOCK Act candidate tickers |
 | | `/api/smart-money/reports` | GET | Historical smart money reports by `?date=` |
-| | `/api/smart-money/report/{ticker}` | GET | Self-contained smart catalyst report + Core Intel + Inflow Ledger (supports `?date=YYYY-MM-DD`) |
+| | `/api/smart-money/report/{ticker}` | GET | Self-contained smart catalyst report + Core Intel + Inflow & Outflow Ledgers (supports `?date=YYYY-MM-DD`) |
 | | `/api/smart-money/trigger` | POST | On-demand trigger for Engine 2 (Smart Money Scout) |
 | **Whale Options** | `/api/options/today` | GET | Latest unusual options flow and call sweep candidates |
 | | `/api/options/reports` | GET | Historical options whale reports by `?date=` |

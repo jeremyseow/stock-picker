@@ -32,14 +32,14 @@ interface RawNewsItem {
 }
 
 interface InflowTransaction {
-  date?: string;
-  buyer?: string;
-  role?: string;
-  type?: string;
-  shares?: number;
+  type: string;
+  name: string;
+  role: string;
+  committee?: string | null;
   price?: string;
-  value?: string;
-  committee?: string;
+  shares?: number | null;
+  amount: string;
+  date: string;
   delta_own?: string;
 }
 
@@ -47,7 +47,8 @@ interface OutflowTransaction {
   date?: string;
   seller?: string;
   role?: string;
-  shares?: number;
+  type?: string;
+  shares?: number | null;
   price?: string;
   value?: string;
   details?: string;
@@ -605,7 +606,7 @@ function ReportPageContent({ params }: { params: Promise<{ ticker: string }> }) 
                   }`}
                 >
                   <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                  <span>Institutional Inflow (Buys)</span>
+                  <span>Insider & Congress Inflow (Buys)</span>
                   {smOverlay.inflow_ledger && (
                     <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-950 text-emerald-400 font-mono">
                       {smOverlay.inflow_ledger.length}
@@ -624,7 +625,7 @@ function ReportPageContent({ params }: { params: Promise<{ ticker: string }> }) 
                   }`}
                 >
                   <span className="w-2 h-2 rounded-full bg-rose-400" />
-                  <span>Executive Outflow (Sells)</span>
+                  <span>Insider & Congress Outflow (Sells)</span>
                   {smOverlay.outflow_ledger && (
                     <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-rose-950 text-rose-400 font-mono">
                       {smOverlay.outflow_ledger.length}
@@ -647,9 +648,9 @@ function ReportPageContent({ params }: { params: Promise<{ ticker: string }> }) 
               {/* Ledger Summary Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                 <div className="bg-slate-950/60 border border-slate-800 p-3.5 rounded-xl">
-                  <span className="text-[10px] text-slate-500 uppercase font-black block mb-1">Buyers</span>
+                  <span className="text-[10px] text-slate-500 uppercase font-black block mb-1">Buying Insiders & Lawmakers</span>
                   <span className="text-xs font-semibold text-slate-200">
-                    {smOverlay.top_buyer_summary || "Multiple executive filings"}
+                    {smOverlay.top_buyer_summary || "Multiple executive & lawmaker filings"}
                   </span>
                 </div>
                 <div className="bg-slate-950/60 border border-slate-800 p-3.5 rounded-xl">
@@ -683,27 +684,45 @@ function ReportPageContent({ params }: { params: Promise<{ ticker: string }> }) 
                     <tr>
                       <th className="py-2">Date</th>
                       <th className="py-2">Buyer / Politician</th>
-                      <th className="py-2">Role / Committee</th>
+                      <th className="py-2">Role / Chamber</th>
+                      <th className="py-2">Committee</th>
                       <th className="py-2">Trade Price</th>
                       <th className="py-2">Shares</th>
                       <th className="py-2 text-right">Value</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60">
-                    {smOverlay.inflow_ledger.map((item, idx) => (
-                      <tr key={idx} className="hover:bg-slate-950/40 transition-colors">
-                        <td className="py-2.5 text-slate-400 font-mono">{item.date || "N/A"}</td>
-                        <td className="py-2.5 font-bold text-white">{item.buyer || "Executive"}</td>
-                        <td className="py-2.5 text-slate-300">{item.role || item.committee || "Officer"}</td>
-                        <td className="py-2.5 font-bold text-indigo-300 font-mono">{item.price || "N/A"}</td>
-                        <td className="py-2.5 text-slate-300 font-mono">
-                          {item.shares ? item.shares.toLocaleString() : "-"}
-                        </td>
-                        <td className="py-2.5 text-right font-black text-emerald-400 font-mono">
-                          {item.value || "-"}
-                        </td>
-                      </tr>
-                    ))}
+                    {smOverlay.inflow_ledger.map((item, idx) => {
+                      const isCongress = item.type?.toLowerCase().includes("congress") || item.role?.toLowerCase().includes("house") || item.role?.toLowerCase().includes("senate");
+                      return (
+                        <tr key={idx} className="hover:bg-slate-950/40 transition-colors">
+                          <td className="py-2.5 text-slate-400 font-mono">{item.date || "N/A"}</td>
+                          <td className="py-2.5 font-bold text-white">
+                            <div className="flex items-center gap-1.5">
+                              {isCongress ? (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30 font-medium">
+                                  🏛️ Congress
+                                </span>
+                              ) : (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-medium">
+                                  👔 Insider
+                                </span>
+                              )}
+                              <span>{item.name || (item as any).buyer || "Executive"}</span>
+                            </div>
+                          </td>
+                          <td className="py-2.5 text-slate-300">{item.role || "Officer"}</td>
+                          <td className="py-2.5 text-slate-300">{item.committee || "-"}</td>
+                          <td className="py-2.5 font-bold text-indigo-300 font-mono">{item.price || "N/A"}</td>
+                          <td className="py-2.5 text-slate-300 font-mono">
+                            {item.shares ? item.shares.toLocaleString() : "-"}
+                          </td>
+                          <td className="py-2.5 text-right font-black text-emerald-400 font-mono">
+                            {item.amount || (item as any).value || "-"}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -718,10 +737,10 @@ function ReportPageContent({ params }: { params: Promise<{ ticker: string }> }) 
                 <span className="text-xl shrink-0 mt-0.5">⚠️</span>
                 <div className="space-y-1">
                   <span className="text-xs font-bold text-rose-300 uppercase tracking-wider block">
-                    Executive Liquidation Warning (Bearish Divergence)
+                    Insider & Lawmaker Liquidation Warning (Bearish Divergence)
                   </span>
                   <p className="text-xs text-slate-300 leading-relaxed font-sans">
-                    Corporate directors and C-suite executives have executed heavy open-market liquidations. When paired with high retail social euphoria, this institutional distribution strongly indicates that retail dip-buyers are absorbing supply as <strong>exit liquidity</strong>.
+                    Corporate directors, C-suite executives, and members of Congress have executed open-market sales or STOCK Act liquidations. When paired with high retail social euphoria, this institutional distribution strongly indicates that retail dip-buyers are absorbing supply as <strong>exit liquidity</strong>.
                   </p>
                 </div>
               </div>
@@ -729,9 +748,9 @@ function ReportPageContent({ params }: { params: Promise<{ ticker: string }> }) 
               {/* Ledger Summary Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                 <div className="bg-slate-950/60 border border-slate-800 p-3.5 rounded-xl">
-                  <span className="text-[10px] text-slate-500 uppercase font-black block mb-1">Selling Executives</span>
+                  <span className="text-[10px] text-slate-500 uppercase font-black block mb-1">Selling Insiders & Lawmakers</span>
                   <span className="text-xs font-semibold text-rose-200">
-                    {smOverlay.top_seller_summary || "Multiple corporate insiders"}
+                    {smOverlay.top_seller_summary || "Multiple corporate insiders & lawmakers"}
                   </span>
                 </div>
                 <div className="bg-slate-950/60 border border-slate-800 p-3.5 rounded-xl">
@@ -745,7 +764,7 @@ function ReportPageContent({ params }: { params: Promise<{ ticker: string }> }) 
                 <div className="bg-slate-950/60 border border-slate-800 p-3.5 rounded-xl">
                   <span className="text-[10px] text-slate-500 uppercase font-black block mb-1">Signal Bias</span>
                   <span className="text-xs font-bold text-amber-300">
-                    {synthesis?.archetype === "The Retail Trap" ? "Exit Liquidity Risk" : "Heavy Insider Distribution"}
+                    {synthesis?.archetype === "The Retail Trap" ? "Exit Liquidity Risk" : "Heavy Institutional Distribution"}
                   </span>
                 </div>
               </div>
@@ -756,7 +775,7 @@ function ReportPageContent({ params }: { params: Promise<{ ticker: string }> }) 
                   <thead className="text-[11px] uppercase tracking-wider text-slate-400 border-b border-slate-800 pb-2">
                     <tr>
                       <th className="py-2">Filing Date</th>
-                      <th className="py-2">Executive / Insider</th>
+                      <th className="py-2">Seller / Politician</th>
                       <th className="py-2">Role / Title</th>
                       <th className="py-2">Sale Price Range</th>
                       <th className="py-2 text-right">Shares Sold</th>
@@ -768,7 +787,20 @@ function ReportPageContent({ params }: { params: Promise<{ ticker: string }> }) 
                     {smOverlay.outflow_ledger.map((item, idx) => (
                       <tr key={idx} className="hover:bg-slate-950/40 transition-colors">
                         <td className="py-2.5 text-slate-400 font-mono">{item.date || "N/A"}</td>
-                        <td className="py-2.5 font-bold text-white">{item.seller || "Insider"}</td>
+                        <td className="py-2.5 font-bold text-white">
+                          <div className="flex items-center gap-1.5">
+                            {item.type?.toLowerCase().includes("congress") ? (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30 font-medium">
+                                🏛️ Congress
+                              </span>
+                            ) : (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 font-medium">
+                                👔 Insider
+                              </span>
+                            )}
+                            <span>{item.seller || "Insider"}</span>
+                          </div>
+                        </td>
                         <td className="py-2.5 text-slate-300">{item.role || "Officer"}</td>
                         <td className="py-2.5 font-bold text-amber-300 font-mono">{item.price || "N/A"}</td>
                         <td className="py-2.5 text-right text-slate-300 font-mono font-bold">
